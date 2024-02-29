@@ -1,0 +1,19 @@
+Question ::= Path Constraints
+
+Path ::= Type (Arrow Type)*
+
+Arrow ::= "->"
+Arrow ::= "~>"
+
+Type ::= NAME
+Type ::= NAME "<" Type ">"
+Type ::= "(" Type ")"
+Type ::= TypeList<",">
+Type ::= Type Arrow Type
+
+TypeList<DELIMITER> ::= Type (DELIMITER Type)*
+
+Constraints ::= EMPTY
+Constraints ::= "where" TypeConstrains ("," TypeConstrains)*
+
+TypeConstrains ::= Type "<" TypeList<"&">
