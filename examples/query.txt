@@ -1,0 +1,17 @@
+a -> b
+a ~> b
+a -> b -> c
+a, b -> c
+A<T> -> B<T>
+A<T> -> B where T < ToString
+A<T> -> B<G> where T < ToString & Equtable<T>, G < ToString
+A<T> -> (B<T> -> C) -> C
+A, B -> (A, B)
+A<(T, R)> -> T
+A -> (A -> B -> C)
+A -> (A -> (B -> C))
+A -> ((A -> B) -> B)
+A<B<T>> -> (T<A>, T<B>)
+A<T> -> B<T> where A<T> < B<T>
+
+`A, B -> C, D` is `(A, B) -> (C, D)`

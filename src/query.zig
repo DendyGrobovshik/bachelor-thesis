@@ -53,7 +53,9 @@ const Function = struct {
         _: std.fmt.FormatOptions,
         writer: anytype,
     ) !void {
-        try writer.print("{s} -> ({s})", .{ this.from, this.to });
+        const arrow = if (this.directly) "->" else "~>";
+
+        try writer.print("{s} {s} ({s})", .{ this.from, arrow, this.to });
     }
 };
 
@@ -80,7 +82,7 @@ const Type = union(Kind) {
 
 const Constraint = struct {
     type: *Type,
-    superTypes: std.ArrayList(Type),
+    superTypes: std.ArrayList(*Type),
 
     pub fn format(
         this: Constraint,
@@ -89,23 +91,35 @@ const Constraint = struct {
         writer: anytype,
     ) !void {
         // TODO: print array with "&": https://stackoverflow.com/questions/77290888/can-i-sprintf-to-an-arraylist-in-zig
-        try writer.print("{s} < {any}", .{ this.type, this.superTypes });
+
+        const slice = this.superTypes.items;
+        if (slice.len > 0) {
+            try writer.print("{s} < ", .{this.type});
+            for (slice[0 .. slice.len - 1]) |item| {
+                try writer.print("{s} & ", .{item});
+            }
+            try writer.print("{s}", .{slice[slice.len - 1]});
+        }
     }
 };
 
-const Question = struct {
-    ty: *Type,
+const Query = struct {
+    type: *Type,
     constraints: std.ArrayList(Constraint),
 
     pub fn format(
-        this: Question,
+        this: Query,
         comptime _: []const u8,
         _: std.fmt.FormatOptions,
         writer: anytype,
     ) !void {
-        try writer.print("{s}", .{this.ty});
-        if (this.constraints.items.len > 0) {
-            try writer.print(" where {any}", .{this.constraints});
+        const slice = this.constraints.items;
+        if (slice.len > 0) {
+            try writer.print("{s} where ", .{this.type});
+            for (slice[0 .. slice.len - 1]) |item| {
+                try writer.print("{s}, ", .{item});
+            }
+            try writer.print("{s}", .{slice[slice.len - 1]});
         }
     }
 };
@@ -149,6 +163,10 @@ pub fn Parser() type {
             std.mem.copyForwards(u8, strWithEnd[0..str.len], str);
             strWithEnd[str.len] = END;
 
+            if (std.mem.indexOf(u8, strWithEnd, "where")) |idx| {
+                strWithEnd[idx] = END;
+            }
+
             const parser = Self{
                 .arena = arena,
                 .str = strWithEnd,
@@ -162,7 +180,36 @@ pub fn Parser() type {
             self.arena.deinit();
         }
 
-        pub fn parse(self: *Self) ParserError!*Type {
+        // Debug only
+        pub fn printError(self: *Self, err: ParserError) void {
+            std.debug.print("Error happend: {}\n", .{err});
+            for (0..self.str.len - 1) |i| {
+                const c = if (self.str[i] == END) 'w' else self.str[i];
+                std.debug.print("{c}", .{c});
+            }
+            std.debug.print("\n", .{});
+
+            for (0..self.pos - 1) |_| {
+                std.debug.print(" ", .{});
+            }
+            std.debug.print("^\n", .{});
+        }
+
+        pub fn parse(self: *Self) ParserError!Query {
+            const ty = try parseType(self);
+
+            var constraints: std.ArrayList(Constraint) = undefined;
+            if (self.pos < self.str.len) {
+                self.pos += 5; // (w)here -> (EOF)here, so skip 4 chars "here"
+                constraints = try parseConstrants(self);
+            } else {
+                constraints = std.ArrayList(Constraint).init(self.arena.allocator());
+            }
+
+            return .{ .type = ty, .constraints = constraints };
+        }
+
+        pub fn parseType(self: *Self) ParserError!*Type {
             std.debug.print("Parsing {s} ... {}\n", .{ self.str, self.pos });
 
             const baseType = try self.parseEndType();
@@ -171,7 +218,7 @@ pub fn Parser() type {
             std.debug.print("Parsing continuation... {}\n", .{nextToken});
             switch (nextToken) {
                 Token.arrow => {
-                    const cont = try self.parse();
+                    const cont = try self.parseType();
                     const ty = try self.arena.allocator().create(Type);
                     ty.function = .{ .from = baseType, .to = cont, .directly = nextToken.arrow };
                     return ty;
@@ -191,7 +238,7 @@ pub fn Parser() type {
                     try types.append(baseType);
 
                     if (nextToken.char == ',') {
-                        const conts = try self.parse();
+                        const conts = try self.parseType();
                         switch (conts.*) {
                             .list => {
                                 if (conts.list.ordered) {
@@ -235,7 +282,7 @@ pub fn Parser() type {
                     if (nextToken.char != '(') {
                         return ParserError.UnexpectedChar;
                     }
-                    const ty = try self.parse();
+                    const ty = try self.parseType();
                     switch (ty.*) {
                         .list => ty.list.ordered = true,
                         else => {},
@@ -267,7 +314,13 @@ pub fn Parser() type {
                         self.pos -= 1;
                         return null;
                     }
-                    const generic = try self.parse();
+                    // No space should be after '<' if it's begining of generic
+                    if (self.cur() == ' ') {
+                        self.pos -= 1;
+                        return null;
+                    }
+
+                    const generic = try self.parseType();
                     nextToken = self.next();
                     if (nextToken.char != '>') {
                         self.pos -= 1;
@@ -283,6 +336,73 @@ pub fn Parser() type {
                 },
                 .end => return null,
             }
+        }
+
+        pub fn parseConstrants(self: *Self) ParserError!std.ArrayList(Constraint) {
+            std.debug.print("Start parsrins constraints...\n", .{});
+            var constraints = std.ArrayList(Constraint).init(self.arena.allocator());
+
+            while (true) {
+                // TODO: check nominative type in pool (with generic equvalence)
+                const ty = try self.parseEndType();
+
+                var nextToken = self.next();
+                switch (nextToken) {
+                    .char => {
+                        if (nextToken.char != '<') {
+                            return ParserError.UnexpectedChar;
+                        }
+                    },
+                    .arrow => return ParserError.UnexpectedArrow,
+                    .name => return ParserError.UnexpectedNominative,
+                    .end => return ParserError.UnexpectedEnd,
+                }
+                var superTypes = std.ArrayList(*Type).init(self.arena.allocator());
+
+                while (true) {
+                    const superType = try self.parseEndType();
+                    try superTypes.append(superType);
+
+                    nextToken = self.next();
+                    switch (nextToken) {
+                        .end => {
+                            // self.pos -= 1;
+                            break;
+                        },
+                        .char => {
+                            switch (nextToken.char) {
+                                ',' => {
+                                    self.pos -= 1;
+                                    break;
+                                },
+                                '&' => continue,
+                                else => return ParserError.UnexpectedChar,
+                            }
+                        },
+                        .name => return ParserError.UnexpectedNominative,
+                        .arrow => return ParserError.UnexpectedArrow,
+                    }
+                }
+
+                const constraint = .{ .type = ty, .superTypes = superTypes };
+                try constraints.append(constraint);
+
+                nextToken = self.next(); // ',' or EOF
+                switch (nextToken) {
+                    .end => break,
+                    .char => {
+                        if (nextToken.char == ',') {
+                            continue;
+                        }
+
+                        return ParserError.UnexpectedChar;
+                    },
+                    .name => return ParserError.UnexpectedNominative,
+                    .arrow => return ParserError.UnexpectedArrow,
+                }
+            }
+
+            return constraints;
         }
 
         inline fn cur(self: *Self) u8 {
@@ -319,6 +439,10 @@ pub fn Parser() type {
                 return .{ .char = self.str[self.pos - 1] };
             }
 
+            // if (self.pos < self.str) {
+            //     self.pos += 1;
+            // }
+
             return .{ .end = {} };
         }
     };
@@ -330,7 +454,7 @@ test "simple type" {
 
     var parser = try Parser().init(arena.allocator(), "A -> B");
     defer parser.deinit();
-    const actual: *Type = try parser.parse();
+    const actual: *Type = try parser.parseType();
 
     var a: Type = .{ .nominative = .{ .name = "A" } };
     var b: Type = .{ .nominative = .{ .name = "B" } };
@@ -350,7 +474,7 @@ test "simple type string" {
 
     var parser = try Parser().init(arena.allocator(), "A -> B");
     defer parser.deinit();
-    const ty: *Type = try parser.parse();
+    const ty: *Type = try parser.parseType();
 
     const actual = try std.fmt.allocPrint(arena.allocator(), "{}", .{ty});
 
@@ -363,7 +487,7 @@ test "function return tuple" {
 
     var parser = try Parser().init(arena.allocator(), "A -> (C, D)");
     defer parser.deinit();
-    const ty: *Type = try parser.parse();
+    const ty: *Type = try parser.parseType();
 
     const actual = try std.fmt.allocPrint(arena.allocator(), "{}", .{ty});
 
@@ -376,7 +500,7 @@ test "different lists" {
 
     var parser = try Parser().init(arena.allocator(), "((A, B), C) -> C, B -> D");
     defer parser.deinit();
-    const ty: *Type = try parser.parse();
+    const ty: *Type = try parser.parseType();
 
     const actual = try std.fmt.allocPrint(arena.allocator(), "{}", .{ty});
 
@@ -389,7 +513,7 @@ test "lons list" {
 
     var parser = try Parser().init(arena.allocator(), "(A, B, C) -> A<A, B, C>");
     defer parser.deinit();
-    const ty: *Type = try parser.parse();
+    const ty: *Type = try parser.parseType();
 
     const actual = try std.fmt.allocPrint(arena.allocator(), "{}", .{ty});
 
@@ -402,7 +526,7 @@ test "list inside a list" {
 
     var parser = try Parser().init(arena.allocator(), "(A, (A, B))");
     defer parser.deinit();
-    const ty: *Type = try parser.parse();
+    const ty: *Type = try parser.parseType();
 
     const actual = try std.fmt.allocPrint(arena.allocator(), "{}", .{ty});
 
@@ -415,7 +539,7 @@ test "complicated type" {
 
     var parser = try Parser().init(arena.allocator(), "A, B -> (A, B) -> A<T> -> (B -> (C, D<T>))");
     defer parser.deinit();
-    const ty: *Type = try parser.parse();
+    const ty: *Type = try parser.parseType();
 
     const actual = try std.fmt.allocPrint(arena.allocator(), "{}", .{ty});
 
@@ -428,9 +552,74 @@ test "complicated type 2" {
 
     var parser = try Parser().init(arena.allocator(), "((A, B), C) -> (A<T, G>) -> A, B -> A<T, (G, R)> -> (B -> (C, D<T>))");
     defer parser.deinit();
-    const ty: *Type = try parser.parse();
+    const ty: *Type = try parser.parseType();
 
     const actual = try std.fmt.allocPrint(arena.allocator(), "{}", .{ty});
 
     try std.testing.expectEqualStrings("((A, B), C) -> (A<[T, G]> -> ([A, B] -> (A<[T, (G, R)]> -> (B -> ((C, D<[T]>))))))", actual);
+}
+
+test "complicated type with ~>" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var parser = try Parser().init(arena.allocator(), "((A, B), C) ~> (A<T, G>) -> A, B -> A<T, (G ~> R)> -> (B -> (C, D<T>))");
+    defer parser.deinit();
+    const ty: *Type = try parser.parseType();
+
+    const actual = try std.fmt.allocPrint(arena.allocator(), "{}", .{ty});
+
+    try std.testing.expectEqualStrings("((A, B), C) ~> (A<[T, G]> -> ([A, B] -> (A<[T, G ~> (R)]> -> (B -> ((C, D<[T]>))))))", actual);
+}
+
+test "function in generic ~>" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var parser = try Parser().init(arena.allocator(), "A<D, (A -> B ~> C), B>");
+    defer parser.deinit();
+    const ty: *Type = try parser.parseType();
+
+    const actual = try std.fmt.allocPrint(arena.allocator(), "{}", .{ty});
+
+    try std.testing.expectEqualStrings("A<[D, A -> (B ~> (C)), B]>", actual);
+}
+
+test "simple constraint" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var parser = try Parser().init(arena.allocator(), "A -> B<T> where T < ToString");
+    defer parser.deinit();
+    const ty: Query = try parser.parse();
+
+    const actual = try std.fmt.allocPrint(arena.allocator(), "{}", .{ty});
+
+    try std.testing.expectEqualStrings("A -> (B<[T]>) where T < ToString", actual);
+}
+
+test "complicated constraint" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var parser = try Parser().init(arena.allocator(), "A -> B<T> where T < ToString & B, A < X<T> & Y");
+    defer parser.deinit();
+    const ty: Query = try parser.parse();
+
+    const actual = try std.fmt.allocPrint(arena.allocator(), "{}", .{ty});
+
+    try std.testing.expectEqualStrings("A -> (B<[T]>) where T < ToString & B, A < X<[T]> & Y", actual);
+}
+
+test "complicated constraint 2" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var parser = try Parser().init(arena.allocator(), "A<(A -> B, T)> where A < (A -> B) & (A, T)");
+    defer parser.deinit();
+    const ty: Query = try parser.parse();
+
+    const actual = try std.fmt.allocPrint(arena.allocator(), "{}", .{ty});
+
+    try std.testing.expectEqualStrings("A<[A -> ([B, T])]> where A < A -> (B) & (A, T)", actual);
 }
