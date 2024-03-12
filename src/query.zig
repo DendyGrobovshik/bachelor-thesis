@@ -153,8 +153,9 @@ pub fn Parser() type {
         const Self = @This();
 
         arena: std.heap.ArenaAllocator,
-        pos: usize,
         str: []const u8,
+        pos: usize,
+        typeMap: std.StringHashMap(*Type),
 
         pub fn init(allocator: Allocator, str: []const u8) !Self {
             const arena = std.heap.ArenaAllocator.init(allocator);
@@ -171,6 +172,7 @@ pub fn Parser() type {
                 .arena = arena,
                 .str = strWithEnd,
                 .pos = 0,
+                .typeMap = std.StringHashMap(*Type).init(allocator),
             };
 
             return parser;
@@ -295,10 +297,20 @@ pub fn Parser() type {
                     return ty;
                 },
                 .name => {
+                    const allocator = self.arena.allocator();
                     const generic = try self.parseGeneric();
-                    const ty = try self.arena.allocator().create(Type);
+                    const ty = try allocator.create(Type);
                     ty.* = .{ .nominative = .{ .name = nextToken.name, .generic = generic } };
-                    return ty;
+
+                    const typeStr = try std.fmt.allocPrint(allocator, "{}", .{ty});
+                    if (self.typeMap.get(typeStr)) |savedTy| {
+                        allocator.destroy(ty);
+                        allocator.free(typeStr);
+                        return savedTy;
+                    } else {
+                        try self.typeMap.put(typeStr, ty);
+                        return ty;
+                    }
                 },
                 .arrow => return ParserError.UnexpectedArrow,
                 .end => return ParserError.UnexpectedEnd,
@@ -343,7 +355,6 @@ pub fn Parser() type {
             var constraints = std.ArrayList(Constraint).init(self.arena.allocator());
 
             while (true) {
-                // TODO: check nominative type in pool (with generic equvalence)
                 const ty = try self.parseEndType();
 
                 var nextToken = self.next();
@@ -366,7 +377,6 @@ pub fn Parser() type {
                     nextToken = self.next();
                     switch (nextToken) {
                         .end => {
-                            // self.pos -= 1;
                             break;
                         },
                         .char => {
@@ -604,9 +614,9 @@ test "complicated constraint" {
 
     var parser = try Parser().init(arena.allocator(), "A -> B<T> where T < ToString & B, A < X<T> & Y");
     defer parser.deinit();
-    const ty: Query = try parser.parse();
+    const query: Query = try parser.parse();
 
-    const actual = try std.fmt.allocPrint(arena.allocator(), "{}", .{ty});
+    const actual = try std.fmt.allocPrint(arena.allocator(), "{}", .{query});
 
     try std.testing.expectEqualStrings("A -> (B<[T]>) where T < ToString & B, A < X<[T]> & Y", actual);
 }
@@ -617,9 +627,27 @@ test "complicated constraint 2" {
 
     var parser = try Parser().init(arena.allocator(), "A<(A -> B, T)> where A < (A -> B) & (A, T)");
     defer parser.deinit();
-    const ty: Query = try parser.parse();
+    const query: Query = try parser.parse();
 
-    const actual = try std.fmt.allocPrint(arena.allocator(), "{}", .{ty});
+    const actual = try std.fmt.allocPrint(arena.allocator(), "{}", .{query});
 
     try std.testing.expectEqualStrings("A<[A -> ([B, T])]> where A < A -> (B) & (A, T)", actual);
+}
+
+test "nominative with same name point to the same type" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var parser = try Parser().init(arena.allocator(), "T -> A<T> where T < A<T>");
+    defer parser.deinit();
+    const query: Query = try parser.parse();
+
+    const t1 = query.type.function.from;
+    const t2 = query.type.function.to.nominative.generic.?.list.list.items[0];
+    const t3 = query.constraints.items[0].type;
+    const t4 = query.constraints.items[0].superTypes.items[0].nominative.generic.?.list.list.items[0];
+
+    try std.testing.expectEqual(t1, t2);
+    try std.testing.expectEqual(t1, t3);
+    try std.testing.expectEqual(t1, t4);
 }
