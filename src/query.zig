@@ -46,6 +46,7 @@ const Function = struct {
     from: *Type,
     to: *Type,
     directly: bool = true,
+    braced: bool = false,
 
     pub fn format(
         this: Function,
@@ -55,7 +56,17 @@ const Function = struct {
     ) !void {
         const arrow = if (this.directly) "->" else "~>";
 
-        try writer.print("{s} {s} ({s})", .{ this.from, arrow, this.to });
+        switch (this.from.*) {
+            .function => try writer.print("({s})", .{this.from}),
+            else => try writer.print("{s}", .{this.from}),
+        }
+
+        try writer.print(" {s} ", .{arrow});
+
+        switch (this.to.*) {
+            .function => try writer.print("({s})", .{this.to}),
+            else => try writer.print("{s}", .{this.to}),
+        }
     }
 };
 
@@ -120,6 +131,8 @@ const Query = struct {
                 try writer.print("{s}, ", .{item});
             }
             try writer.print("{s}", .{slice[slice.len - 1]});
+        } else {
+            try writer.print("{d}", .{this.type});
         }
     }
 };
@@ -201,9 +214,10 @@ pub fn Parser() type {
             const ty = try parseType(self);
 
             var constraints: std.ArrayList(Constraint) = undefined;
+            self.pos += 1;
             if (self.pos < self.str.len) {
-                self.pos += 5; // (w)here -> (EOF)here, so skip 4 chars "here"
-                constraints = try parseConstrants(self);
+                self.pos += 4; // (w)here -> (EOF)here, so skip 4 chars "here"
+                constraints = try parseConstraints(self);
             } else {
                 constraints = std.ArrayList(Constraint).init(self.arena.allocator());
             }
@@ -250,14 +264,18 @@ pub fn Parser() type {
                                 }
                             },
                             .function => {
-                                try types.append(conts.function.from);
-                                ordered = false;
+                                if (conts.function.braced) {
+                                    try types.append(conts);
+                                } else {
+                                    try types.append(conts.function.from);
+                                    ordered = false;
 
-                                const ty = try self.arena.allocator().create(Type);
-                                const from = try self.arena.allocator().create(Type);
-                                from.* = .{ .list = .{ .list = types, .ordered = ordered } };
-                                ty.function = .{ .from = from, .to = conts.function.to, .directly = conts.function.directly };
-                                return ty;
+                                    const ty = try self.arena.allocator().create(Type);
+                                    const from = try self.arena.allocator().create(Type);
+                                    from.* = .{ .list = .{ .list = types, .ordered = ordered } };
+                                    ty.function = .{ .from = from, .to = conts.function.to, .directly = conts.function.directly };
+                                    return ty;
+                                }
                             },
                             .nominative => {
                                 try types.append(conts);
@@ -287,6 +305,7 @@ pub fn Parser() type {
                     const ty = try self.parseType();
                     switch (ty.*) {
                         .list => ty.list.ordered = true,
+                        .function => ty.function.braced = true,
                         else => {},
                     }
                     nextToken = self.next();
@@ -350,7 +369,7 @@ pub fn Parser() type {
             }
         }
 
-        pub fn parseConstrants(self: *Self) ParserError!std.ArrayList(Constraint) {
+        pub fn parseConstraints(self: *Self) ParserError!std.ArrayList(Constraint) {
             std.debug.print("Start parsrins constraints...\n", .{});
             var constraints = std.ArrayList(Constraint).init(self.arena.allocator());
 
@@ -488,7 +507,7 @@ test "simple type string" {
 
     const actual = try std.fmt.allocPrint(arena.allocator(), "{}", .{ty});
 
-    try std.testing.expectEqualStrings("A -> (B)", actual);
+    try std.testing.expectEqualStrings("A -> B", actual);
 }
 
 test "function return tuple" {
@@ -501,7 +520,7 @@ test "function return tuple" {
 
     const actual = try std.fmt.allocPrint(arena.allocator(), "{}", .{ty});
 
-    try std.testing.expectEqualStrings("A -> ((C, D))", actual);
+    try std.testing.expectEqualStrings("A -> (C, D)", actual);
 }
 
 test "different lists" {
@@ -514,7 +533,20 @@ test "different lists" {
 
     const actual = try std.fmt.allocPrint(arena.allocator(), "{}", .{ty});
 
-    try std.testing.expectEqualStrings("((A, B), C) -> ([C, B] -> (D))", actual);
+    try std.testing.expectEqualStrings("((A, B), C) -> ([C, B] -> D)", actual);
+}
+
+test "function argument" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var parser = try Parser().init(arena.allocator(), "(A -> B) -> A -> B");
+    defer parser.deinit();
+    const ty: *Type = (try parser.parse()).type;
+
+    const actual = try std.fmt.allocPrint(arena.allocator(), "{}", .{ty});
+
+    try std.testing.expectEqualStrings("(A -> B) -> (A -> B)", actual);
 }
 
 test "lons list" {
@@ -527,7 +559,7 @@ test "lons list" {
 
     const actual = try std.fmt.allocPrint(arena.allocator(), "{}", .{ty});
 
-    try std.testing.expectEqualStrings("(A, B, C) -> (A<[A, B, C]>)", actual);
+    try std.testing.expectEqualStrings("(A, B, C) -> A<[A, B, C]>", actual);
 }
 
 test "list inside a list" {
@@ -543,6 +575,32 @@ test "list inside a list" {
     try std.testing.expectEqualStrings("(A, (A, B))", actual);
 }
 
+test "comma mixed with arrows" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var parser = try Parser().init(arena.allocator(), "(R -> G), E -> E, (R -> G)");
+    defer parser.deinit();
+    const ty: *Type = try parser.parseType();
+
+    const actual = try std.fmt.allocPrint(arena.allocator(), "{}", .{ty});
+
+    try std.testing.expectEqualStrings("[R -> G, E] -> [E, R -> G]", actual);
+}
+
+test "comma mixed with arrows 2" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var parser = try Parser().init(arena.allocator(), "A, B -> C, D ~> E, (R -> G)");
+    defer parser.deinit();
+    const ty: *Type = try parser.parseType();
+
+    const actual = try std.fmt.allocPrint(arena.allocator(), "{}", .{ty});
+
+    try std.testing.expectEqualStrings("[A, B] -> ([C, D] ~> [E, R -> G])", actual);
+}
+
 test "complicated type" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -553,7 +611,7 @@ test "complicated type" {
 
     const actual = try std.fmt.allocPrint(arena.allocator(), "{}", .{ty});
 
-    try std.testing.expectEqualStrings("[A, B] -> ((A, B) -> (A<[T]> -> (B -> ((C, D<[T]>)))))", actual);
+    try std.testing.expectEqualStrings("[A, B] -> ((A, B) -> (A<[T]> -> (B -> (C, D<[T]>))))", actual);
 }
 
 test "complicated type 2" {
@@ -566,7 +624,7 @@ test "complicated type 2" {
 
     const actual = try std.fmt.allocPrint(arena.allocator(), "{}", .{ty});
 
-    try std.testing.expectEqualStrings("((A, B), C) -> (A<[T, G]> -> ([A, B] -> (A<[T, (G, R)]> -> (B -> ((C, D<[T]>))))))", actual);
+    try std.testing.expectEqualStrings("((A, B), C) -> (A<[T, G]> -> ([A, B] -> (A<[T, (G, R)]> -> (B -> (C, D<[T]>)))))", actual);
 }
 
 test "complicated type with ~>" {
@@ -579,7 +637,7 @@ test "complicated type with ~>" {
 
     const actual = try std.fmt.allocPrint(arena.allocator(), "{}", .{ty});
 
-    try std.testing.expectEqualStrings("((A, B), C) ~> (A<[T, G]> -> ([A, B] -> (A<[T, G ~> (R)]> -> (B -> ((C, D<[T]>))))))", actual);
+    try std.testing.expectEqualStrings("((A, B), C) ~> (A<[T, G]> -> ([A, B] -> (A<[T, G ~> R]> -> (B -> (C, D<[T]>)))))", actual);
 }
 
 test "function in generic ~>" {
@@ -592,7 +650,7 @@ test "function in generic ~>" {
 
     const actual = try std.fmt.allocPrint(arena.allocator(), "{}", .{ty});
 
-    try std.testing.expectEqualStrings("A<[D, A -> (B ~> (C)), B]>", actual);
+    try std.testing.expectEqualStrings("A<[D, A -> (B ~> C), B]>", actual);
 }
 
 test "simple constraint" {
@@ -605,7 +663,7 @@ test "simple constraint" {
 
     const actual = try std.fmt.allocPrint(arena.allocator(), "{}", .{ty});
 
-    try std.testing.expectEqualStrings("A -> (B<[T]>) where T < ToString", actual);
+    try std.testing.expectEqualStrings("A -> B<[T]> where T < ToString", actual);
 }
 
 test "complicated constraint" {
@@ -618,7 +676,7 @@ test "complicated constraint" {
 
     const actual = try std.fmt.allocPrint(arena.allocator(), "{}", .{query});
 
-    try std.testing.expectEqualStrings("A -> (B<[T]>) where T < ToString & B, A < X<[T]> & Y", actual);
+    try std.testing.expectEqualStrings("A -> B<[T]> where T < ToString & B, A < X<[T]> & Y", actual);
 }
 
 test "complicated constraint 2" {
@@ -631,7 +689,7 @@ test "complicated constraint 2" {
 
     const actual = try std.fmt.allocPrint(arena.allocator(), "{}", .{query});
 
-    try std.testing.expectEqualStrings("A<[A -> ([B, T])]> where A < A -> (B) & (A, T)", actual);
+    try std.testing.expectEqualStrings("A<[A -> [B, T]]> where A < A -> B & (A, T)", actual);
 }
 
 test "nominative with same name point to the same type" {
