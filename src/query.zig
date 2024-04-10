@@ -42,7 +42,7 @@ const List = struct {
     }
 };
 
-const Function = struct {
+pub const Function = struct {
     from: *Type,
     to: *Type,
     directly: bool = true,
@@ -72,7 +72,7 @@ const Function = struct {
 
 const Kind = enum { nominative, list, function };
 
-const Type = union(Kind) {
+pub const Type = union(Kind) {
     nominative: Nominative,
     list: List,
     function: Function,
@@ -114,7 +114,7 @@ const Constraint = struct {
     }
 };
 
-const Query = struct {
+pub const Query = struct {
     type: *Type,
     constraints: std.ArrayList(Constraint),
 
