@@ -1,0 +1,8 @@
+len : String -> Int
+sum : Array<Int> -> Int
+transform : (Int -> String) -> Int -> String
+transform2 : Int -> String -> Int -> String
+generic1 : T -> T
+generic2 : T -> G
+constraints : T where T < Printable & String
+twocons : IntEven -> T where T < Printable & Array<Int>

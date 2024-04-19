@@ -1,9 +1,21 @@
 const std = @import("std");
 const Allocator = @import("std").mem.Allocator;
 
+const TypeNode = @import("engine/typeNode.zig").TypeNode;
+
 const Nominative = struct {
     name: []const u8,
-    generic: ?*Type = null,
+    generic: ?*TypeC = null,
+    hadGeneric: bool = false,
+
+    // It is always null for concrete types. (TODO: ensure)
+    // For generic type(which is current one-caps letter):
+    // it updated only once when this node for the first time inserted in tree
+    // if this generic will inserted in future, than in `following(to, backlink)`
+    // `backlink` will be updated to this `typeNode`, so `A -> A` and `A -> B`
+    // can be easily distinshed, because of in second case typeNode will be `null`
+    // So, this with fact that equally named nominative types are points to the same `*Nomintive`
+    typeNode: ?*TypeNode = null,
 
     pub fn format(
         this: Nominative,
@@ -16,10 +28,20 @@ const Nominative = struct {
             try writer.print("<{s}>", .{ty});
         }
     }
+
+    // TODO: kind of hack: now support only one-caps generic
+    // it can be extended in reverse way, need to keep only alphabet size array
+    // no need to keep all the names definied in all packages
+    pub fn isGeneric(self: *Nominative) bool {
+        if (self.name.len == 1 and std.ascii.isUpper(self.name[0])) {
+            return true;
+        }
+        return false;
+    }
 };
 
 const List = struct {
-    list: std.ArrayList(*Type),
+    list: std.ArrayList(*TypeC),
     ordered: bool = false,
 
     pub fn format(
@@ -43,8 +65,8 @@ const List = struct {
 };
 
 pub const Function = struct {
-    from: *Type,
-    to: *Type,
+    from: *TypeC,
+    to: *TypeC,
     directly: bool = true,
     braced: bool = false,
 
@@ -56,16 +78,16 @@ pub const Function = struct {
     ) !void {
         const arrow = if (this.directly) "->" else "~>";
 
-        switch (this.from.*) {
-            .function => try writer.print("({s})", .{this.from}),
-            else => try writer.print("{s}", .{this.from}),
+        switch (this.from.ty.*) {
+            .function => try writer.print("({s})", .{this.from.ty}),
+            else => try writer.print("{s}", .{this.from.ty}),
         }
 
         try writer.print(" {s} ", .{arrow});
 
-        switch (this.to.*) {
-            .function => try writer.print("({s})", .{this.to}),
-            else => try writer.print("{s}", .{this.to}),
+        switch (this.to.ty.*) {
+            .function => try writer.print("({s})", .{this.to.ty}),
+            else => try writer.print("{s}", .{this.to.ty}),
         }
     }
 };
@@ -91,9 +113,38 @@ pub const Type = union(Kind) {
     }
 };
 
-const Constraint = struct {
-    type: *Type,
-    superTypes: std.ArrayList(*Type),
+// Type with contraints
+pub const TypeC = struct {
+    ty: *Type,
+    constraints: std.ArrayList(Constraint),
+
+    pub fn init(allocator: Allocator, ty: *Type) !*TypeC {
+        const constraints = std.ArrayList(Constraint).init(allocator);
+        const self = try allocator.create(TypeC);
+
+        self.* = .{
+            .ty = ty,
+            .constraints = constraints,
+        };
+
+        return self;
+    }
+
+    pub fn format(
+        this: TypeC,
+        comptime _: []const u8,
+        _: std.fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
+        try writer.print("{s}", .{this.ty});
+    }
+
+    // TODO: support printing with constraint
+};
+
+pub const Constraint = struct {
+    ty: *TypeC,
+    superTypes: std.ArrayList(*TypeC),
 
     pub fn format(
         this: Constraint,
@@ -105,7 +156,7 @@ const Constraint = struct {
 
         const slice = this.superTypes.items;
         if (slice.len > 0) {
-            try writer.print("{s} < ", .{this.type});
+            try writer.print("{s} < ", .{this.ty});
             for (slice[0 .. slice.len - 1]) |item| {
                 try writer.print("{s} & ", .{item});
             }
@@ -115,7 +166,7 @@ const Constraint = struct {
 };
 
 pub const Query = struct {
-    type: *Type,
+    ty: *TypeC,
     constraints: std.ArrayList(Constraint),
 
     pub fn format(
@@ -126,13 +177,13 @@ pub const Query = struct {
     ) !void {
         const slice = this.constraints.items;
         if (slice.len > 0) {
-            try writer.print("{s} where ", .{this.type});
+            try writer.print("{s} where ", .{this.ty});
             for (slice[0 .. slice.len - 1]) |item| {
                 try writer.print("{s}, ", .{item});
             }
             try writer.print("{s}", .{slice[slice.len - 1]});
         } else {
-            try writer.print("{d}", .{this.type});
+            try writer.print("{d}", .{this.ty});
         }
     }
 };
@@ -168,7 +219,7 @@ pub fn Parser() type {
         arena: std.heap.ArenaAllocator,
         str: []const u8,
         pos: usize,
-        typeMap: std.StringHashMap(*Type),
+        typeMap: std.StringHashMap(*TypeC),
 
         pub fn init(allocator: Allocator, str: []const u8) !Self {
             const arena = std.heap.ArenaAllocator.init(allocator);
@@ -185,7 +236,7 @@ pub fn Parser() type {
                 .arena = arena,
                 .str = strWithEnd,
                 .pos = 0,
-                .typeMap = std.StringHashMap(*Type).init(allocator),
+                .typeMap = std.StringHashMap(*TypeC).init(allocator),
             };
 
             return parser;
@@ -213,20 +264,34 @@ pub fn Parser() type {
         pub fn parse(self: *Self) ParserError!Query {
             const ty = try parseType(self);
 
+            const allocator = self.arena.allocator();
+
             var constraints: std.ArrayList(Constraint) = undefined;
             self.pos += 1;
             if (self.pos < self.str.len) {
                 self.pos += 4; // (w)here -> (EOF)here, so skip 4 chars "here"
                 constraints = try parseConstraints(self);
             } else {
-                constraints = std.ArrayList(Constraint).init(self.arena.allocator());
+                constraints = std.ArrayList(Constraint).init(allocator);
             }
 
-            return .{ .type = ty, .constraints = constraints };
+            for (constraints.items) |constraint| {
+                // only nominative constraints currently supproted
+                if (self.typeMap.get(constraint.ty.ty.nominative.name)) |tyc| {
+                    std.debug.print("Constraint directly assigned to {s}\n", .{tyc});
+                    try tyc.constraints.append(constraint);
+                }
+            }
+
+            return .{
+                .ty = ty,
+                .constraints = constraints,
+            };
         }
 
-        pub fn parseType(self: *Self) ParserError!*Type {
+        pub fn parseType(self: *Self) ParserError!*TypeC {
             std.debug.print("Parsing {s} ... {}\n", .{ self.str, self.pos });
+            const allocator = self.arena.allocator();
 
             const baseType = try self.parseEndType();
 
@@ -235,9 +300,13 @@ pub fn Parser() type {
             switch (nextToken) {
                 Token.arrow => {
                     const cont = try self.parseType();
-                    const ty = try self.arena.allocator().create(Type);
-                    ty.function = .{ .from = baseType, .to = cont, .directly = nextToken.arrow };
-                    return ty;
+                    const ty = try allocator.create(Type);
+                    ty.function = .{
+                        .from = baseType,
+                        .to = cont,
+                        .directly = nextToken.arrow,
+                    };
+                    return try wrapInTypeC(ty, allocator);
                 },
                 Token.char => {
                     if (nextToken.char != ',' and nextToken.char != ')' and nextToken.char != '>') {
@@ -249,32 +318,36 @@ pub fn Parser() type {
                         return baseType;
                     }
 
-                    var types = std.ArrayList(*Type).init(self.arena.allocator());
+                    var types = std.ArrayList(*TypeC).init(allocator);
                     var ordered = false;
                     try types.append(baseType);
 
                     if (nextToken.char == ',') {
                         const conts = try self.parseType();
-                        switch (conts.*) {
+                        switch (conts.ty.*) {
                             .list => {
-                                if (conts.list.ordered) {
+                                if (conts.ty.list.ordered) {
                                     try types.append(conts);
                                 } else {
-                                    try types.appendSlice(conts.list.list.items);
+                                    try types.appendSlice(conts.ty.list.list.items);
                                 }
                             },
                             .function => {
-                                if (conts.function.braced) {
+                                if (conts.ty.function.braced) {
                                     try types.append(conts);
                                 } else {
-                                    try types.append(conts.function.from);
+                                    try types.append(conts.ty.function.from);
                                     ordered = false;
 
-                                    const ty = try self.arena.allocator().create(Type);
-                                    const from = try self.arena.allocator().create(Type);
+                                    const ty = try allocator.create(Type);
+                                    const from = try allocator.create(Type);
                                     from.* = .{ .list = .{ .list = types, .ordered = ordered } };
-                                    ty.function = .{ .from = from, .to = conts.function.to, .directly = conts.function.directly };
-                                    return ty;
+                                    ty.function = .{
+                                        .from = try wrapInTypeC(from, allocator),
+                                        .to = conts.ty.function.to,
+                                        .directly = conts.ty.function.directly,
+                                    };
+                                    return wrapInTypeC(ty, allocator);
                                 }
                             },
                             .nominative => {
@@ -285,16 +358,16 @@ pub fn Parser() type {
                         self.pos -= 1;
                     }
 
-                    const ty = try self.arena.allocator().create(Type);
+                    const ty = try allocator.create(Type);
                     ty.* = .{ .list = .{ .list = types, .ordered = ordered } };
-                    return ty;
+                    return try wrapInTypeC(ty, allocator);
                 },
                 Token.end => return baseType,
                 Token.name => return ParserError.UnexpectedNominative,
             }
         }
 
-        fn parseEndType(self: *Self) ParserError!*Type {
+        fn parseEndType(self: *Self) ParserError!*TypeC {
             var nextToken = self.next();
             std.debug.print("Parsing end type... {}\n", .{nextToken});
             switch (nextToken) {
@@ -303,9 +376,9 @@ pub fn Parser() type {
                         return ParserError.UnexpectedChar;
                     }
                     const ty = try self.parseType();
-                    switch (ty.*) {
-                        .list => ty.list.ordered = true,
-                        .function => ty.function.braced = true,
+                    switch (ty.ty.*) {
+                        .list => ty.ty.list.ordered = true,
+                        .function => ty.ty.function.braced = true,
                         else => {},
                     }
                     nextToken = self.next();
@@ -318,8 +391,12 @@ pub fn Parser() type {
                 .name => {
                     const allocator = self.arena.allocator();
                     const generic = try self.parseGeneric();
+
                     const ty = try allocator.create(Type);
-                    ty.* = .{ .nominative = .{ .name = nextToken.name, .generic = generic } };
+                    ty.* = .{ .nominative = .{
+                        .name = nextToken.name,
+                        .generic = generic,
+                    } };
 
                     const typeStr = try std.fmt.allocPrint(allocator, "{}", .{ty});
                     if (self.typeMap.get(typeStr)) |savedTy| {
@@ -327,8 +404,9 @@ pub fn Parser() type {
                         allocator.free(typeStr);
                         return savedTy;
                     } else {
-                        try self.typeMap.put(typeStr, ty);
-                        return ty;
+                        const res = try wrapInTypeC(ty, allocator);
+                        try self.typeMap.put(typeStr, res);
+                        return res;
                     }
                 },
                 .arrow => return ParserError.UnexpectedArrow,
@@ -336,9 +414,9 @@ pub fn Parser() type {
             }
         }
 
-        fn parseGeneric(self: *Self) ParserError!?*Type {
+        fn parseGeneric(self: *Self) ParserError!?*TypeC {
             var nextToken = self.next();
-            std.debug.print("Parsing generic... {}\n", .{nextToken});
+            // std.debug.print("Parsing generic... {}\n", .{nextToken});
             switch (nextToken) {
                 .char => {
                     if (nextToken.char != '<') {
@@ -371,7 +449,9 @@ pub fn Parser() type {
 
         pub fn parseConstraints(self: *Self) ParserError!std.ArrayList(Constraint) {
             std.debug.print("Start parsrins constraints...\n", .{});
-            var constraints = std.ArrayList(Constraint).init(self.arena.allocator());
+            const allocator = self.arena.allocator();
+
+            var constraints = std.ArrayList(Constraint).init(allocator);
 
             while (true) {
                 const ty = try self.parseEndType();
@@ -387,7 +467,7 @@ pub fn Parser() type {
                     .name => return ParserError.UnexpectedNominative,
                     .end => return ParserError.UnexpectedEnd,
                 }
-                var superTypes = std.ArrayList(*Type).init(self.arena.allocator());
+                var superTypes = std.ArrayList(*TypeC).init(allocator);
 
                 while (true) {
                     const superType = try self.parseEndType();
@@ -413,7 +493,7 @@ pub fn Parser() type {
                     }
                 }
 
-                const constraint = .{ .type = ty, .superTypes = superTypes };
+                const constraint = .{ .ty = ty, .superTypes = superTypes };
                 try constraints.append(constraint);
 
                 nextToken = self.next(); // ',' or EOF
@@ -475,6 +555,16 @@ pub fn Parser() type {
             return .{ .end = {} };
         }
     };
+}
+
+fn wrapInTypeC(ty: *Type, allocator: Allocator) !*TypeC {
+    const typec = try allocator.create(TypeC);
+    typec.* = .{
+        .ty = ty,
+        .constraints = std.ArrayList(Constraint).init(allocator),
+    };
+
+    return typec;
 }
 
 test "simple type" {

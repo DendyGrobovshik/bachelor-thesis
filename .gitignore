@@ -1,0 +1,7 @@
+zig-cache
+zig-out
+
+pages/*
+!pages/bachelor-thesis.pdf
+!pages/bachelor-thesis.tex
+!pages/itmo-student-thesis.cls
