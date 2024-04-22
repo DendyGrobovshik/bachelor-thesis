@@ -36,7 +36,7 @@ pub const TypeNode = struct {
     super: std.ArrayList(*TypeNode),
     sub: std.ArrayList(*TypeNode),
 
-    preceding: ?*Node,
+    preceding: ?*Node, // TODO: check это не предыдущая Node, а текущая, которой принадлежит эта TypeNOde
     followings: std.ArrayList(*Following),
 
     pub fn init(allocator: Allocator, of: Of) !*TypeNode {
@@ -67,6 +67,20 @@ pub const TypeNode = struct {
             .syntetic => return true,
             else => return false,
         }
+    }
+
+    pub fn isGout(self: *TypeNode) bool {
+        return switch (self.kind) {
+            .gout => true,
+            else => false,
+        };
+    }
+
+    pub fn isClosing(self: *TypeNode) bool {
+        return switch (self.kind) {
+            .close => true,
+            else => false,
+        };
     }
 
     pub fn setAsParentTo(parent: *TypeNode, child: *TypeNode) std.mem.Allocator.Error!void {
@@ -137,9 +151,27 @@ pub const TypeNode = struct {
         for (self.followings.items, 0..) |following, followingId| {
             var nextNodeAccumulatedName = try accumulatedName.clone();
 
-            try nextNodeAccumulatedName.appendSlice("functionarrow322");
+            var nameWasTransformed = false;
 
-            try nextNodeAccumulatedName.appendSlice(name);
+            if (self.isGout()) {
+                nameWasTransformed = true;
+                std.debug.print("HERE IT IS: {s}\n", .{nextNodeAccumulatedName.items});
+                const start = std.mem.lastIndexOf(u8, nextNodeAccumulatedName.items, "functionopening322").? + 34;
+                std.debug.print("drop start {s}\n", .{nextNodeAccumulatedName.items[start..]});
+
+                const genericNominativeName = try std.fmt.allocPrint(allocator, "{s}leftangle322{s}rightangle322", .{ name, nextNodeAccumulatedName.items[start..] });
+                std.debug.print("TRE {s}\n", .{genericNominativeName});
+                try nextNodeAccumulatedName.replaceRange(start - 34, nextNodeAccumulatedName.items.len - start + 34, genericNominativeName);
+            }
+
+            if (!nameWasTransformed) {
+                // if (!(self.isClosing() and utils.endsWithRightAngle(nextNodeAccumulatedName.items))) {
+                try nextNodeAccumulatedName.appendSlice("functionarrow322");
+
+                try nextNodeAccumulatedName.appendSlice(name);
+                // }
+            }
+
             const nextNodeId = try std.fmt.allocPrint(allocator, "{s}T", .{nextNodeAccumulatedName.items});
 
             const toNextNode = try std.fmt.allocPrint(allocator, "{s}{} -> {s}{}[lhead = cluster_{s}{}];\n", .{ typeNodeId, backlinkFollowingId, nextNodeId, followingId, nextNodeAccumulatedName.items, followingId });
@@ -242,10 +274,36 @@ pub const TypeNode = struct {
         for (candidates.items) |nextTypeNode| {
             var nextAccumulatedName = try accumulatedName.clone();
 
-            try nextAccumulatedName.appendSlice("functionarrow322");
-
             const name = if (std.mem.eql(u8, current.of, "?")) "syntetic" else current.of;
-            try nextAccumulatedName.appendSlice(name);
+
+            var nameWasTransformed = false;
+            if (std.mem.eql(u8, nextTypeNode.of, "functionclosing322")) {
+                if (current.isGout()) {
+                    std.debug.print("HERE2 IT IS: {s}\n", .{nextAccumulatedName.items});
+                    nameWasTransformed = true;
+                    const start = std.mem.lastIndexOf(u8, nextAccumulatedName.items, "functionopening322").? + 34;
+                    std.debug.print("REST {s}\n", .{nextAccumulatedName.items[start..]});
+                    // const arrow = std.mem.lastIndexOf(u8, nextAccumulatedName.items[start..], "functionarrow322").?;
+                    // std.debug.print("FROM {}\n", .{start});
+                    std.debug.print("IN ANGLE NAME '{s}'\n", .{nextAccumulatedName.items[start..]});
+
+                    const genericNominativeName = try std.fmt.allocPrint(allocator, "{s}leftangle322{s}rightangle322", .{
+                        current.of,
+                        nextAccumulatedName.items[start..],
+                    });
+                    std.debug.print("TRE {s}\n", .{genericNominativeName});
+                    try nextAccumulatedName.replaceRange(start - 34, nextAccumulatedName.items.len - start + 34, genericNominativeName);
+                }
+                std.debug.print("BEE {s}\n", .{nextAccumulatedName.items});
+            }
+
+            if (!nameWasTransformed) {
+                // if (!(current.isClosing() and utils.endsWithRightAngle(nextAccumulatedName.items))) {
+                try nextAccumulatedName.appendSlice("functionarrow322");
+                try nextAccumulatedName.appendSlice(name);
+                // }
+                std.debug.print("NEE {s}\n", .{name});
+            }
 
             try drawLongJump(file, allocator, end, nextTypeNode, nextAccumulatedName, targetId);
         }

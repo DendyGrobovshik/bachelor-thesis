@@ -37,6 +37,8 @@ pub fn fixName(allocator: Allocator, name: []const u8, trimBegin: bool) ![]const
     next = try replaceWith(allocator, next, "functionarrow322", " -> ");
     next = try replaceWith(allocator, next, "functionopening322", "(");
     next = try replaceWith(allocator, next, "functionclosing322", ")");
+    next = try replaceWith(allocator, next, "leftangle322", "<");
+    next = try replaceWith(allocator, next, "rightangle322", ">");
     next = try replaceWith(allocator, next, "( -> ", "(");
     next = try replaceWith(allocator, next, " -> )", ")");
     // next = try replaceWith(allocator, next, "syntetic", "?");
@@ -89,6 +91,18 @@ pub fn recursiveTypeProcessor(allocator: Allocator, ty: *Type) !*Type {
         },
         .list => return TreeOperationError.NotYetSupported,
     }
+}
+
+pub fn endsWithRightAngle(str: []const u8) bool {
+    if (str.len > 13) {
+        std.debug.print("GG {s}\n", .{str});
+        if (std.mem.eql(u8, str[str.len - 13 ..], "rightangle322")) {
+            std.debug.print("WP\n", .{});
+            return true;
+        }
+    }
+
+    return false;
 }
 
 // const Shuffle = std.ArrayList(Type);

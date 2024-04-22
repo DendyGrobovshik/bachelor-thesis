@@ -5,6 +5,7 @@ const SegmentedList = @import("std").SegmentedList;
 const TypeNode = @import("typeNode.zig").TypeNode;
 const TypeNodeKind = @import("typeNode.zig").TypeNode.TypeNodeKind;
 const Declaration = @import("tree.zig").Declaration;
+const SEGMENTED_LIST_SIZE = @import("../constants.zig").SEGMENTED_LIST_SIZE;
 const utils = @import("utils.zig");
 const Function = @import("../query.zig").Function;
 const Type = @import("../query.zig").Type;
@@ -62,34 +63,40 @@ pub const Node = struct {
         }
     }
 
-    // TODO: handle constraints?
     pub fn searchNominative(self: *Node, next: *TypeC, allocator: Allocator) NodeError!*TypeNode {
         std.debug.print("Searching nominative {s}\n", .{next.ty});
-        // TODO: check is it correct handles `A<T>` and `A`
+
         if (next.ty.nominative.generic) |_| {
-            std.debug.print("before calling searchNominativeWithGeneric\n", .{});
             return try self.searchNominativeWithGeneric(next, allocator);
         }
 
+        if (!next.ty.nominative.isGeneric()) {
+            return self.searchRealNominative(next, allocator);
+        } else {
+            return self.searchGeneric(next, allocator);
+        }
+    }
+
+    fn searchRealNominative(self: *Node, next: *TypeC, allocator: Allocator) NodeError!*TypeNode {
         const typeNodeOf = next.ty.nominative.name;
 
-        if (!next.ty.nominative.isGeneric()) {
-            if (self.types.get(typeNodeOf)) |alreadyInserted| {
-                return alreadyInserted;
-            }
-
-            const newTypeNode = try TypeNode.init(allocator, typeNodeOf);
-            if (next.ty.nominative.hadGeneric) {
-                newTypeNode.kind = TypeNodeKind.gout;
-            }
-            try self.types.put(typeNodeOf, newTypeNode);
-            // NOTE: it's not necessary to return function result, 'newTypeNode' can be used
-
-            const result = try solveNominativePosition(self.universal, newTypeNode);
-
-            return result;
+        if (self.types.get(typeNodeOf)) |alreadyInserted| {
+            return alreadyInserted;
         }
 
+        const newTypeNode = try TypeNode.init(allocator, typeNodeOf);
+        if (next.ty.nominative.hadGeneric) {
+            newTypeNode.kind = TypeNodeKind.gout;
+        }
+        try self.types.put(typeNodeOf, newTypeNode);
+        // NOTE: it's not necessary to return function result, 'newTypeNode' can be used
+
+        const result = try solveNominativePosition(self.universal, newTypeNode);
+
+        return result;
+    }
+
+    fn searchGeneric(self: *Node, next: *TypeC, allocator: Allocator) NodeError!*TypeNode {
         var parents = std.ArrayList(*TypeNode).init(allocator);
 
         // generic are only constraint defined, and it requires another inserting algorithm
