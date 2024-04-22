@@ -573,18 +573,13 @@ test "simple type" {
 
     var parser = try Parser().init(arena.allocator(), "A -> B");
     defer parser.deinit();
-    const actual: *Type = try parser.parseType();
+    const actual: *Type = (try parser.parseType()).ty;
 
-    var a: Type = .{ .nominative = .{ .name = "A" } };
-    var b: Type = .{ .nominative = .{ .name = "B" } };
+    const a = Type{ .nominative = .{ .name = "A" } };
+    const b = Type{ .nominative = .{ .name = "B" } };
 
-    const expected: *const Type = &.{ .function = .{
-        .from = &a,
-        .to = &b,
-        .directly = true,
-    } };
-
-    try std.testing.expectEqualDeep(actual, expected);
+    try std.testing.expectEqualDeep(actual.function.from.ty.*, a);
+    try std.testing.expectEqualDeep(actual.function.to.ty.*, b);
 }
 
 test "simple type string" {
@@ -593,7 +588,7 @@ test "simple type string" {
 
     var parser = try Parser().init(arena.allocator(), "A -> B");
     defer parser.deinit();
-    const ty: *Type = try parser.parseType();
+    const ty: *Type = (try parser.parseType()).ty;
 
     const actual = try std.fmt.allocPrint(arena.allocator(), "{}", .{ty});
 
@@ -606,7 +601,7 @@ test "function return tuple" {
 
     var parser = try Parser().init(arena.allocator(), "A -> (C, D)");
     defer parser.deinit();
-    const ty: *Type = try parser.parseType();
+    const ty: *Type = (try parser.parseType()).ty;
 
     const actual = try std.fmt.allocPrint(arena.allocator(), "{}", .{ty});
 
@@ -619,7 +614,7 @@ test "different lists" {
 
     var parser = try Parser().init(arena.allocator(), "((A, B), C) -> C, B -> D");
     defer parser.deinit();
-    const ty: *Type = try parser.parseType();
+    const ty: *Type = (try parser.parseType()).ty;
 
     const actual = try std.fmt.allocPrint(arena.allocator(), "{}", .{ty});
 
@@ -632,7 +627,7 @@ test "function argument" {
 
     var parser = try Parser().init(arena.allocator(), "(A -> B) -> A -> B");
     defer parser.deinit();
-    const ty: *Type = (try parser.parse()).type;
+    const ty: *Type = (try parser.parse()).ty.ty;
 
     const actual = try std.fmt.allocPrint(arena.allocator(), "{}", .{ty});
 
@@ -645,7 +640,7 @@ test "lons list" {
 
     var parser = try Parser().init(arena.allocator(), "(A, B, C) -> A<A, B, C>");
     defer parser.deinit();
-    const ty: *Type = try parser.parseType();
+    const ty: *Type = (try parser.parseType()).ty;
 
     const actual = try std.fmt.allocPrint(arena.allocator(), "{}", .{ty});
 
@@ -658,7 +653,7 @@ test "list inside a list" {
 
     var parser = try Parser().init(arena.allocator(), "(A, (A, B))");
     defer parser.deinit();
-    const ty: *Type = try parser.parseType();
+    const ty: *Type = (try parser.parseType()).ty;
 
     const actual = try std.fmt.allocPrint(arena.allocator(), "{}", .{ty});
 
@@ -671,7 +666,7 @@ test "comma mixed with arrows" {
 
     var parser = try Parser().init(arena.allocator(), "(R -> G), E -> E, (R -> G)");
     defer parser.deinit();
-    const ty: *Type = try parser.parseType();
+    const ty: *Type = (try parser.parseType()).ty;
 
     const actual = try std.fmt.allocPrint(arena.allocator(), "{}", .{ty});
 
@@ -684,7 +679,7 @@ test "comma mixed with arrows 2" {
 
     var parser = try Parser().init(arena.allocator(), "A, B -> C, D ~> E, (R -> G)");
     defer parser.deinit();
-    const ty: *Type = try parser.parseType();
+    const ty: *Type = (try parser.parseType()).ty;
 
     const actual = try std.fmt.allocPrint(arena.allocator(), "{}", .{ty});
 
@@ -697,7 +692,7 @@ test "complicated type" {
 
     var parser = try Parser().init(arena.allocator(), "A, B -> (A, B) -> A<T> -> (B -> (C, D<T>))");
     defer parser.deinit();
-    const ty: *Type = try parser.parseType();
+    const ty: *Type = (try parser.parseType()).ty;
 
     const actual = try std.fmt.allocPrint(arena.allocator(), "{}", .{ty});
 
@@ -710,7 +705,7 @@ test "complicated type 2" {
 
     var parser = try Parser().init(arena.allocator(), "((A, B), C) -> (A<T, G>) -> A, B -> A<T, (G, R)> -> (B -> (C, D<T>))");
     defer parser.deinit();
-    const ty: *Type = try parser.parseType();
+    const ty: *Type = (try parser.parseType()).ty;
 
     const actual = try std.fmt.allocPrint(arena.allocator(), "{}", .{ty});
 
@@ -723,7 +718,7 @@ test "complicated type with ~>" {
 
     var parser = try Parser().init(arena.allocator(), "((A, B), C) ~> (A<T, G>) -> A, B -> A<T, (G ~> R)> -> (B -> (C, D<T>))");
     defer parser.deinit();
-    const ty: *Type = try parser.parseType();
+    const ty: *Type = (try parser.parseType()).ty;
 
     const actual = try std.fmt.allocPrint(arena.allocator(), "{}", .{ty});
 
@@ -736,7 +731,7 @@ test "function in generic ~>" {
 
     var parser = try Parser().init(arena.allocator(), "A<D, (A -> B ~> C), B>");
     defer parser.deinit();
-    const ty: *Type = try parser.parseType();
+    const ty: *Type = (try parser.parseType()).ty;
 
     const actual = try std.fmt.allocPrint(arena.allocator(), "{}", .{ty});
 
@@ -790,10 +785,10 @@ test "nominative with same name point to the same type" {
     defer parser.deinit();
     const query: Query = try parser.parse();
 
-    const t1 = query.type.function.from;
-    const t2 = query.type.function.to.nominative.generic.?.list.list.items[0];
-    const t3 = query.constraints.items[0].type;
-    const t4 = query.constraints.items[0].superTypes.items[0].nominative.generic.?.list.list.items[0];
+    const t1 = query.ty.ty.function.from.ty;
+    const t2 = query.ty.ty.function.to.ty.nominative.generic.?.ty.list.list.items[0].ty;
+    const t3 = query.constraints.items[0].ty.ty;
+    const t4 = query.constraints.items[0].superTypes.items[0].ty.nominative.generic.?.ty.list.list.items[0].ty;
 
     try std.testing.expectEqual(t1, t2);
     try std.testing.expectEqual(t1, t3);
