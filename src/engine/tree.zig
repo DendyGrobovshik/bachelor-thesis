@@ -3,11 +3,13 @@ const Allocator = @import("std").mem.Allocator;
 const Arena = @import("std").heap.ArenaAllocator;
 const SegmentedList = @import("std").SegmentedList;
 
+const EngineError = @import("error.zig").EngineError;
 const query = @import("../query.zig");
 const TypeC = @import("../query.zig").TypeC;
 const Node = @import("node.zig").Node;
 const TypeNode = @import("typeNode.zig").TypeNode;
 const utils = @import("utils.zig");
+const typeNode = @import("typeNode.zig");
 
 pub const Declaration = struct {
     name: []const u8,
@@ -25,11 +27,11 @@ pub const Declaration = struct {
     }
 };
 
-pub const TreeOperationError = error{
-    CanNotInsert,
-    CanNotFindNode,
-    NotYetSupported,
-} || std.mem.Allocator.Error || Node.NodeError;
+// pub const EngineError = error{
+//     CanNotInsert,
+//     CanNotFindNode,
+//     NotYetSupported,
+// } || std.mem.Allocator.Error || Node.NodeError;
 
 // TODO: allocator optimization(everywhere)
 pub const Tree = struct {
@@ -37,7 +39,7 @@ pub const Tree = struct {
     allocator: Allocator,
 
     pub fn init(allocator: Allocator) !Tree {
-        const head = try Node.init(allocator, null);
+        const head = try Node.init(allocator, &typeNode.PREROOT);
 
         return .{
             .head = head,
@@ -59,7 +61,7 @@ pub const Tree = struct {
 
         try file.writeAll("digraph g {\n");
         try file.writeAll("compound = true;\n");
-        try self.head.draw(file, allocator, std.ArrayList(u8).init(allocator));
+        try self.head.draw(file, allocator);
 
         try file.writeAll("}\n");
 
@@ -76,7 +78,7 @@ pub const Tree = struct {
     }
 
     // no comma + generic transformed to func
-    pub fn addDeclaration(self: *Tree, decl_: *Declaration) TreeOperationError!void {
+    pub fn addDeclaration(self: *Tree, decl_: *Declaration) EngineError!void {
         // const decl = try utils.preprocessDeclaration(self.allocator, decl_);
 
         std.debug.print("======ADDING DECLARATION... {s}\n", .{decl_.name});
@@ -96,7 +98,7 @@ pub const Tree = struct {
         std.debug.print("=====DECLARATION ADDED\n", .{});
     }
 
-    pub fn findDeclarations(self: *Tree, typec: *TypeC) TreeOperationError!std.ArrayList(*Declaration) {
+    pub fn findDeclarations(self: *Tree, typec: *TypeC) EngineError!std.ArrayList(*Declaration) {
         std.debug.print("Searcing declaration...\n", .{});
 
         // // NOTE: for some reasom self.allocator is not enough and `recursiveTypeProcessor` fails

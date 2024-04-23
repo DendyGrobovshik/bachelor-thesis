@@ -1,12 +1,12 @@
 const std = @import("std");
 const Allocator = @import("std").mem.Allocator;
 
+const EngineError = @import("error.zig").EngineError;
 const Declaration = @import("tree.zig").Declaration;
 const Node = @import("node.zig").Node;
 const TypeNode = @import("typeNode.zig").TypeNode;
 const Type = @import("../query.zig").Type;
 const TypeC = @import("../query.zig").TypeC;
-const TreeOperationError = @import("tree.zig").TreeOperationError;
 
 fn replaceWith(allocator: Allocator, str: []const u8, what: []const u8, with: []const u8) ![]const u8 {
     var result = std.ArrayList(u8).init(allocator);
@@ -50,14 +50,14 @@ pub fn fixName(allocator: Allocator, name: []const u8, trimBegin: bool) ![]const
     }
 }
 
-pub fn fixName2(allocator: Allocator, name: std.ArrayList(u8)) TreeOperationError!std.ArrayList(u8) {
+pub fn fixName2(allocator: Allocator, name: std.ArrayList(u8)) EngineError!std.ArrayList(u8) {
     var result = std.ArrayList(u8).init(allocator);
     try result.appendSlice(try fixName(allocator, name.items, true));
 
     return result;
 }
 
-pub fn preprocessDeclaration(allocator: Allocator, decl: Declaration) TreeOperationError!Declaration {
+pub fn preprocessDeclaration(allocator: Allocator, decl: Declaration) EngineError!Declaration {
     const ty: *Type = try allocator.create(Type);
     ty.* = decl.type;
 
@@ -89,7 +89,7 @@ pub fn recursiveTypeProcessor(allocator: Allocator, ty: *Type) !*Type {
             };
             return resTy;
         },
-        .list => return TreeOperationError.NotYetSupported,
+        .list => return EngineError.NotYetSupported,
     }
 }
 
@@ -164,7 +164,7 @@ pub fn endsWithRightAngle(str: []const u8) bool {
 pub fn getBacklinkFollowingId(node: *Node) usize {
     var result: usize = 0;
 
-    if (node.of) |of| {
+    if (node.by) |of| {
         for (of.followings.items, 0..) |following, i| {
             if (following.to == node) {
                 result = i;
@@ -175,16 +175,16 @@ pub fn getBacklinkFollowingId(node: *Node) usize {
     return result;
 }
 
-pub fn getBacklink(ty: *TypeC) Node.NodeError!?*TypeNode {
+pub fn getBacklink(ty: *TypeC) EngineError!?*TypeNode {
     const lastType = try getLastNonCompisiteType(ty);
 
     switch (lastType.ty.*) {
         .nominative => return lastType.ty.nominative.typeNode,
-        else => return Node.NodeError.NotYetSupported,
+        else => return EngineError.NotYetSupported,
     }
 }
 
-pub fn getLastNonCompisiteType(ty: *TypeC) Node.NodeError!*TypeC {
+pub fn getLastNonCompisiteType(ty: *TypeC) EngineError!*TypeC {
     switch (ty.ty.*) {
         .function => return getLastNonCompisiteType(ty.ty.function.to),
         .nominative => {
@@ -193,6 +193,6 @@ pub fn getLastNonCompisiteType(ty: *TypeC) Node.NodeError!*TypeC {
 
             return ty;
         },
-        else => return Node.NodeError.NotYetSupported,
+        else => return EngineError.NotYetSupported,
     }
 }

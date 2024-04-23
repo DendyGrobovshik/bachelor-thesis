@@ -2,70 +2,66 @@ const std = @import("std");
 const Allocator = @import("std").mem.Allocator;
 const SegmentedList = @import("std").SegmentedList;
 
+const EngineError = @import("error.zig").EngineError;
 const TypeNode = @import("typeNode.zig").TypeNode;
-const TypeNodeKind = @import("typeNode.zig").TypeNode.TypeNodeKind;
+const typeNode0 = @import("typeNode.zig");
 const Declaration = @import("tree.zig").Declaration;
-const SEGMENTED_LIST_SIZE = @import("../constants.zig").SEGMENTED_LIST_SIZE;
 const utils = @import("utils.zig");
 const Function = @import("../query.zig").Function;
 const Type = @import("../query.zig").Type;
 const TypeC = @import("../query.zig").TypeC;
 const Constraint = @import("../query.zig").Constraint;
+const Following = @import("following.zig").Following;
+const main = @import("../main.zig");
 
 var globalSynteticId: usize = 0;
 
 pub const Node = struct {
-    pub const NodeError = error{
-        NotYetSupported,
-        ShouldBeUnreachable,
-    } || std.mem.Allocator.Error;
-
-    // points to named part of substition graph
-    types: std.StringHashMap(*TypeNode),
-    universal: *TypeNode,
-    endings: std.ArrayList(*Declaration),
-    of: ?*TypeNode,
-
+    named: std.StringHashMap(*TypeNode),
     syntetics: std.ArrayList(*TypeNode),
 
-    pub fn init(allocator: Allocator, of: ?*TypeNode) NodeError!*Node {
-        var types = std.StringHashMap(*TypeNode).init(allocator);
+    universal: *TypeNode,
+    opening: *TypeNode,
+    closing: *TypeNode,
 
-        const universalOf = "T";
-        const universal = try TypeNode.init(allocator, universalOf);
-        universal.kind = TypeNodeKind.universal;
-        try types.put(universalOf, universal);
+    endings: std.ArrayList(*Declaration),
+    by: *TypeNode,
+
+    pub fn init(allocator: Allocator, by: *TypeNode) EngineError!*Node {
+        const named = std.StringHashMap(*TypeNode).init(allocator);
+        const syntetics = std.ArrayList(*TypeNode).init(allocator);
 
         const endings = std.ArrayList(*Declaration).init(allocator);
-        const syntetics = std.ArrayList(*TypeNode).init(allocator);
 
         const self = try allocator.create(Node);
 
-        self.* = .{
-            .types = types,
-            .universal = universal,
-            .endings = endings,
-            .of = of,
-            .syntetics = syntetics,
-        };
+        const universal = try TypeNode.init(allocator, TypeNode.Kind.universal, self);
+        const opening = try TypeNode.init(allocator, TypeNode.Kind.opening, self);
+        const closing = try TypeNode.init(allocator, TypeNode.Kind.closing, self);
 
-        universal.preceding = self;
+        self.* = .{
+            .named = named,
+            .syntetics = syntetics,
+            .universal = universal,
+            .opening = opening,
+            .closing = closing,
+            .endings = endings,
+            .by = by,
+        };
 
         return self;
     }
 
     // do exact search or insert if no present
-    pub fn search(self: *Node, next: *TypeC, allocator: Allocator) NodeError!*TypeNode {
+    pub fn search(self: *Node, next: *TypeC, allocator: Allocator) EngineError!*TypeNode {
         switch (next.ty.*) {
             .nominative => return try self.searchNominative(next, allocator),
             .function => return try self.searchFunction(next, allocator),
-            .list => return NodeError.NotYetSupported,
+            .list => return EngineError.NotYetSupported,
         }
     }
 
-    pub fn searchNominative(self: *Node, next: *TypeC, allocator: Allocator) NodeError!*TypeNode {
-        std.debug.print("Searching nominative {s}\n", .{next.ty});
-
+    pub fn searchNominative(self: *Node, next: *TypeC, allocator: Allocator) EngineError!*TypeNode {
         if (next.ty.nominative.generic) |_| {
             return try self.searchNominativeWithGeneric(next, allocator);
         }
@@ -77,26 +73,26 @@ pub const Node = struct {
         }
     }
 
-    fn searchRealNominative(self: *Node, next: *TypeC, allocator: Allocator) NodeError!*TypeNode {
-        const typeNodeOf = next.ty.nominative.name;
-
-        if (self.types.get(typeNodeOf)) |alreadyInserted| {
+    fn searchRealNominative(self: *Node, next: *TypeC, allocator: Allocator) EngineError!*TypeNode {
+        if (self.named.get(next.ty.nominative.name)) |alreadyInserted| {
             return alreadyInserted;
         }
-
-        const newTypeNode = try TypeNode.init(allocator, typeNodeOf);
+        const name = next.ty.nominative.name;
+        var newTypeNode: *TypeNode = undefined;
         if (next.ty.nominative.hadGeneric) {
-            newTypeNode.kind = TypeNodeKind.gout;
+            newTypeNode = try TypeNode.init(allocator, .{ .gnominative = name }, self);
+        } else {
+            newTypeNode = try TypeNode.init(allocator, .{ .nominative = name }, self);
         }
-        try self.types.put(typeNodeOf, newTypeNode);
-        // NOTE: it's not necessary to return function result, 'newTypeNode' can be used
 
-        const result = try solveNominativePosition(self.universal, newTypeNode);
+        try self.named.put(name, newTypeNode);
 
-        return result;
+        try solveNominativePosition(self.universal, newTypeNode);
+
+        return newTypeNode;
     }
 
-    fn searchGeneric(self: *Node, next: *TypeC, allocator: Allocator) NodeError!*TypeNode {
+    fn searchGeneric(self: *Node, next: *TypeC, allocator: Allocator) EngineError!*TypeNode {
         var parents = std.ArrayList(*TypeNode).init(allocator);
 
         // generic are only constraint defined, and it requires another inserting algorithm
@@ -116,7 +112,7 @@ pub const Node = struct {
         const result = try solvePosition(self, parents, allocator);
 
         if (next.ty.nominative.typeNode) |backlink| {
-            const following = try allocator.create(TypeNode.Following);
+            const following = try allocator.create(Following);
             following.to = try Node.init(allocator, result);
             following.backlink = backlink;
             try result.followings.append(following);
@@ -134,17 +130,17 @@ pub const Node = struct {
     // Они могут быть как функциональными или соотетсвющие именам(но не составными)
     //
     // TODO: support subtype checking for functions
-    fn solvePosition(self: *Node, parents_: std.ArrayList(*TypeNode), allocator: Allocator) NodeError!*TypeNode {
+    fn solvePosition(self: *Node, parents_: std.ArrayList(*TypeNode), allocator: Allocator) EngineError!*TypeNode {
         var parents = std.AutoHashMap(*TypeNode, void).init(allocator);
         for (parents_.items) |parent| {
             try parents.put(parent, {});
         }
 
-        // TODO: remove debug printing
-        var it = parents.keyIterator();
-        while (it.next()) |parent| {
-            std.debug.print("Next initial parent: {s}\n", .{parent.*.of});
-        }
+        // // TODO: remove debug printing
+        // var it = parents.keyIterator();
+        // while (it.next()) |parent| {
+        //     std.debug.print("Next initial parent: {s}\n", .{parent.*.of});
+        // }
 
         // if any 2 of them have common child replace with it
         // (The child must be syntetic! Or synteric should be inserted betwen parents and him)
@@ -163,8 +159,8 @@ pub const Node = struct {
                 var it2 = parents.keyIterator();
                 while (it2.next()) |y| {
                     if (x != y) {
-                        find_next_common_child: for (x.*.sub.items, 0..) |xChild, xi| {
-                            for (y.*.sub.items, 0..) |yChild, yi| {
+                        find_next_common_child: for (x.*.childs.items, 0..) |xChild, xi| {
+                            for (y.*.childs.items, 0..) |yChild, yi| {
                                 if (xChild == yChild) { // ptr equality
                                     // first common child may be not only one
                                     const commonChild = xChild;
@@ -182,20 +178,20 @@ pub const Node = struct {
                                         // common is not syntetic, so it should be divorced from parents with syntetic
 
                                         // breaking current relations
-                                        _ = x.*.sub.swapRemove(xi);
-                                        _ = y.*.sub.swapRemove(yi);
+                                        _ = x.*.childs.swapRemove(xi);
+                                        _ = y.*.childs.swapRemove(yi);
 
                                         // TODO: check bug if 2 times performed same type searching
                                         var parentsRemoved: u2 = 0;
                                         remove_parents_from_child: while (true) {
-                                            std.debug.print("Removing parent from child: '{s}' with {} super\n", .{ commonChild.of, commonChild.super.items.len });
-                                            for (0..commonChild.super.items.len) |ci| {
-                                                if (commonChild.super.items[ci] == x.*) {
-                                                    _ = commonChild.super.swapRemove(ci);
+                                            std.debug.print("Removing parent from child: '{s}' with {} super\n", .{ commonChild.of, commonChild.parents.items.len });
+                                            for (0..commonChild.parents.items.len) |ci| {
+                                                if (commonChild.parents.items[ci] == x.*) {
+                                                    _ = commonChild.parents.swapRemove(ci);
                                                     parentsRemoved += 1;
                                                     break;
-                                                } else if (commonChild.super.items[ci] == y.*) {
-                                                    _ = commonChild.super.swapRemove(ci);
+                                                } else if (commonChild.parents.items[ci] == y.*) {
+                                                    _ = commonChild.parents.swapRemove(ci);
                                                     parentsRemoved += 1;
                                                     break;
                                                 }
@@ -206,15 +202,15 @@ pub const Node = struct {
                                                 }
                                             }
 
-                                            if (commonChild.super.items.len == 0) {
+                                            if (commonChild.parents.items.len == 0) {
                                                 break :remove_parents_from_child;
                                             }
                                         }
 
-                                        const synteticName = try std.fmt.allocPrint(allocator, "syntetic{}", .{globalSynteticId});
-                                        globalSynteticId += 1;
-                                        const syntetic = syntetic_ orelse try TypeNode.init(allocator, synteticName);
-                                        syntetic.kind = TypeNodeKind.syntetic;
+                                        // const synteticName = try std.fmt.allocPrint(allocator, "syntetic{}", .{globalSynteticId});
+                                        // globalSynteticId += 1;
+                                        const syntetic = syntetic_ orelse try TypeNode.init(allocator, TypeNode.Kind.syntetic, self);
+                                        // syntetic.kind = Kind.syntetic;
                                         syntetic_ = syntetic;
 
                                         try x.*.setAsParentTo(syntetic);
@@ -238,30 +234,30 @@ pub const Node = struct {
 
         if (parents.count() != 1) {
             // pure syntetic, no one reach this state yet
-            const synteticName = try std.fmt.allocPrint(allocator, "syntetic{}", .{globalSynteticId});
-            globalSynteticId += 1;
-            const syntetic = try TypeNode.init(allocator, synteticName);
-            syntetic.kind = TypeNodeKind.syntetic;
+            // const synteticName = try std.fmt.allocPrint(allocator, "syntetic{}", .{globalSynteticId});
+            // globalSynteticId += 1;
+            const syntetic = try TypeNode.init(allocator, TypeNode.Kind.syntetic, self);
+            // syntetic.kind = .syntetic;
 
-            it = parents.keyIterator();
+            var it = parents.keyIterator();
             while (it.next()) |parent| {
-                std.debug.print("New syntetic was synthesized from: {s}\n", .{parent.*.of});
+                // std.debug.print("New syntetic was synthesized from: {s}\n", .{parent.*.of});
                 try parent.*.setAsParentTo(syntetic);
             }
 
             try self.syntetics.append(syntetic);
 
-            std.debug.print("this syntetic supers\n", .{});
-            for (syntetic.super.items) |super| {
-                std.debug.print("super: {s}\n", .{super.of});
-            }
+            // std.debug.print("this syntetic supers\n", .{});
+            // for (syntetic.parents.items) |super| {
+            //     std.debug.print("super: {s}\n", .{super.of});
+            // }
 
             return syntetic;
         }
 
         it = parents.keyIterator();
         while (it.next()) |parent| {
-            std.debug.print("Next updated parent: {s}\n", .{parent.*.of});
+            // std.debug.print("Next updated parent: {s}\n", .{parent.*.of});
 
             switch (parent.*.kind) {
                 .syntetic => try self.syntetics.append(parent.*),
@@ -272,7 +268,7 @@ pub const Node = struct {
         }
 
         // TODO: this is cringe code, but alternatives can lead to seagfault
-        return NodeError.ShouldBeUnreachable;
+        return EngineError.ShouldBeUnreachable;
     }
 
     // Даже если у номинатива есть ограничения их не нужно знать заранее,
@@ -289,10 +285,10 @@ pub const Node = struct {
     // связь с текущей, а иначе рекурсивно вызывается поиск с кандидатами из ниже стоящих)
     // TODO: обработать случай когда нижестоящая является синтетической вершиной
     // (для неё справедлив факт её можно использовать как кандидата)
-    fn solveNominativePosition(current: *TypeNode, new: *TypeNode) NodeError!*TypeNode {
+    fn solveNominativePosition(current: *TypeNode, new: *TypeNode) EngineError!void {
         var pushedBelow = false;
 
-        for (current.sub.items) |sub| {
+        for (current.childs.items) |sub| {
             if (sub.greater(new)) {
                 pushedBelow = true;
                 _ = try solveNominativePosition(sub, new);
@@ -302,9 +298,9 @@ pub const Node = struct {
             // and substable for all top nodes of syntetic
             // TODO: возможно придётся расщеплять синтетику, потому что не все её топ ноды могут быть старшими к текущей
             // ??: опять же подходящие старшие будут поставлены выше текущий по другим путям
-            if (std.mem.eql(u8, sub.of, "?")) {
+            if (sub.isSyntetic()) {
                 pushedBelow = true;
-                for (sub.super.items) |subParent| {
+                for (sub.parents.items) |subParent| {
                     std.debug.print("syn top: {s} {}\n", .{ subParent.of, subParent.greater(new) });
                     if (!subParent.greater(new)) {
                         pushedBelow = false;
@@ -321,12 +317,12 @@ pub const Node = struct {
             try current.setAsParentTo(new);
         }
 
-        return new;
+        // return new;
     }
 
     // fn currentInfimum(x: *TypeNode, y: *TypeNode) *TypeNode {}
 
-    fn searchNominativeWithGeneric(self: *Node, next: *TypeC, allocator: Allocator) NodeError!*TypeNode {
+    fn searchNominativeWithGeneric(self: *Node, next: *TypeC, allocator: Allocator) EngineError!*TypeNode {
         std.debug.print("Searching nominative with generic \n", .{});
         const generic = next.ty.nominative.generic orelse unreachable;
 
@@ -350,7 +346,7 @@ pub const Node = struct {
         return try self.searchHOF(typec, allocator);
     }
 
-    pub fn searchFunction(self: *Node, next: *TypeC, allocator: Allocator) NodeError!*TypeNode {
+    pub fn searchFunction(self: *Node, next: *TypeC, allocator: Allocator) EngineError!*TypeNode {
         std.debug.print("Searching function {s}\n", .{next.ty});
         const from = next.ty.function.from;
         const to = next.ty.function.to;
@@ -359,125 +355,194 @@ pub const Node = struct {
         switch (from.ty.*) {
             .nominative => continuation = try self.searchNominative(from, allocator),
             .function => continuation = try self.searchHOF(from, allocator),
-            .list => return NodeError.NotYetSupported,
+            .list => return EngineError.NotYetSupported,
         }
 
         return try (try continuation.getFollowing(null, allocator)).search(to, allocator); // TODO: check null in following
     }
 
-    fn searchHOF(self: *Node, nextType: *TypeC, allocator: Allocator) NodeError!*TypeNode {
+    fn searchHOF(self: *Node, nextType: *TypeC, allocator: Allocator) EngineError!*TypeNode {
         // const fopen = try self.searchPrimitive(TypeNode.Of{ .fopen = {} }, allocator);
-        const fopen = try self.searchPrimitive("functionopening322", allocator);
-        fopen.kind = TypeNodeKind.open;
+        // const fopen = try self.opening;
+        // fopen.kind = TypeNodeKind.open;
 
-        const fend = try (try fopen.getFollowing(null, allocator)).search(nextType, allocator);
+        const fend = try (try self.opening.getFollowing(null, allocator)).search(nextType, allocator);
 
-        const fclose = try (try fend.getFollowing(null, allocator)).searchPrimitive("functionclosing322", allocator);
-        fclose.kind = TypeNodeKind.close;
+        const fclose = (try fend.getFollowing(null, allocator)).closing;
+        // fclose.kind = TypeNodeKind.close;
         // const fclose = try (try fend.getFollowing(allocator)).searchPrimitive(TypeNode.Of{ .fclose = {} }, allocator);
 
         return fclose;
     }
 
-    fn searchPrimitive(self: *Node, what: TypeNode.Of, allocator: Allocator) NodeError!*TypeNode {
-        if (self.types.get(what)) |typeNode| {
+    fn searchPrimitive(self: *Node, what: TypeNode.Of, allocator: Allocator) EngineError!*TypeNode {
+        if (self.named.get(what)) |typeNode| {
             return typeNode;
         }
 
         const newTypeNode = try TypeNode.init(allocator, what);
         const universal = self.universal;
 
-        try newTypeNode.super.append(universal);
-        try universal.sub.append(newTypeNode);
+        try newTypeNode.parents.append(universal);
+        try universal.childs.append(newTypeNode);
 
         try self.types.put(what, newTypeNode);
 
         return self.types.get(what) orelse unreachable;
     }
 
-    pub fn draw(self: *Node, file: std.fs.File, allocator: Allocator, accumulatedName: std.ArrayList(u8)) !void {
-        // getting following id
+    pub fn fullPathName(self: *Node) anyerror![]const u8 {
+        if (self.by == &typeNode0.PREROOT) {
+            return "";
+        }
 
-        const backlinkFollowingId = utils.getBacklinkFollowingId(self);
+        return try std.fmt.allocPrint(main.gallocator, "{s}{s}", .{ try self.by.fullPathName(), try self.byId() });
+    }
 
-        const nodeHeader = try std.fmt.allocPrint(allocator, "subgraph cluster_{s}{} ", .{ accumulatedName.items, backlinkFollowingId });
-        try file.writeAll(nodeHeader);
+    pub fn byId(self: *Node) anyerror![]const u8 {
+        var result: usize = 0;
+
+        for (self.by.followings.items, 0..) |following, i| {
+            if (following.to == self) {
+                result = i;
+            }
+        }
+
+        return try std.fmt.allocPrint(main.gallocator, "{}", .{result});
+    }
+
+    pub fn draw(self: *Node, file: std.fs.File, allocator: Allocator) anyerror!void {
+        const typeNodes = try self.notEmptyTypeNodes(allocator);
+
+        try file.writeAll(try std.fmt.allocPrint(allocator, "subgraph cluster_{s}", .{try self.fullPathName()}));
         try file.writeAll("{\n");
         try file.writeAll("style=\"rounded\"\n");
 
-        // writing node label
-        const nodeLabelName = try utils.fixName2(allocator, accumulatedName);
-        const nodeLabel = try std.fmt.allocPrint(allocator, "label = \"{s}\";\n", .{nodeLabelName.items});
-        // if (self.isGeneric) {
-        //     const color = try std.fmt.allocPrint(allocator, "color = purple;\nstyle = filled;\n", .{});
-        //     try file.writeAll(color);
-        // }
-        try file.writeAll(nodeLabel);
-
-        // writing type nodes inside this node
-        // for (self.types.items) |typeNode| {
-        var it = self.types.valueIterator();
-        while (it.next()) |typeNode| { // TODO: print not listed here nodes
-            std.debug.print("COMPARING WITH {s}\n", .{typeNode.*.of});
-            const typeNodeLabel = try utils.fixName(allocator, typeNode.*.of, false);
-
-            const typeNodeId = try std.fmt.allocPrint(allocator, "{s}{s}", .{ accumulatedName.items, typeNode.*.of });
-            var typeNodeStyle: []const u8 = "";
-            switch (typeNode.*.kind) {
-                .gin => typeNodeStyle = try std.fmt.allocPrint(allocator, ",color=yellow,style=filled", .{}),
-                .gout => typeNodeStyle = try std.fmt.allocPrint(allocator, ",color=purple,style=filled", .{}),
-                .open => typeNodeStyle = try std.fmt.allocPrint(allocator, ",color=sienna,style=filled", .{}),
-                .close => typeNodeStyle = try std.fmt.allocPrint(allocator, ",color=sienna,style=filled", .{}),
-                .syntetic => typeNodeStyle = try std.fmt.allocPrint(allocator, ",color=blue,style=filled", .{}),
-                else => {},
-            }
-
-            const name = try std.fmt.allocPrint(allocator, "{s}{}[label=\"{s}\"{s}];\n", .{ typeNodeId, backlinkFollowingId, typeNodeLabel, typeNodeStyle });
-            try file.writeAll(name);
-        }
-
-        // TODO: extract copypaste
-        for (self.syntetics.items) |typeNode| {
-            std.debug.print("DRAWING SYNTETIC {s} with {} following\n", .{ typeNode.*.of, typeNode.followings.items.len });
-
-            const typeNodeLabel = try utils.fixName(allocator, typeNode.*.of, false);
-
-            const tname = if (std.mem.eql(u8, typeNode.*.of, "?")) "syntetic" else typeNode.*.of;
-            const typeNodeId = try std.fmt.allocPrint(allocator, "{s}{s}", .{ accumulatedName.items, tname });
-            var typeNodeStyle: []const u8 = "";
-            switch (typeNode.*.kind) {
-                .gin => typeNodeStyle = try std.fmt.allocPrint(allocator, ",color=yellow,style=filled", .{}),
-                .gout => typeNodeStyle = try std.fmt.allocPrint(allocator, ",color=purple,style=filled", .{}),
-                .open => typeNodeStyle = try std.fmt.allocPrint(allocator, ",color=sienna,style=filled", .{}),
-                .close => typeNodeStyle = try std.fmt.allocPrint(allocator, ",color=sienna,style=filled", .{}),
-                .syntetic => typeNodeStyle = try std.fmt.allocPrint(allocator, ",color=blue,style=filled", .{}),
-                else => {},
-            }
-
-            const name = try std.fmt.allocPrint(allocator, "{s}{}[label=\"{s}\"{s}];\n", .{ typeNodeId, backlinkFollowingId, typeNodeLabel, typeNodeStyle });
-            try file.writeAll(name);
-        }
-
-        // writing function finished by this node
         for (self.endings.items) |decl| {
-            std.debug.print("Found ending {s}\n", .{decl.name});
-            const finished = try std.fmt.allocPrint(allocator, "{s}[color=darkgreen,style=filled,shape=signature];\n", .{decl.name});
-            try file.writeAll(finished);
+            try file.writeAll(try std.fmt.allocPrint(allocator, "{s}[color=darkgreen,style=filled,shape=signature];\n", .{decl.name}));
+        }
+
+        for (typeNodes.items) |typeNode| {
+            try typeNode.draw(file, allocator);
         }
 
         try file.writeAll("}\n");
 
-        // for (self.types.items) |*typeNode| {
-        it = self.types.valueIterator();
+        for (typeNodes.items) |typeNode| {
+            try typeNode.drawConnections(file, allocator);
+        }
+    }
+
+    fn notEmptyTypeNodes(self: *Node, allocator: Allocator) anyerror!std.ArrayList(*TypeNode) {
+        var result = std.ArrayList(*TypeNode).init(allocator);
+
+        var it = self.named.valueIterator();
         while (it.next()) |typeNode| {
-            std.debug.print("Continuing by {s}\n", .{typeNode.*.of});
-            typeNode.*.preceding = self;
-            try typeNode.*.draw(file, allocator, accumulatedName);
+            try result.append(typeNode.*);
         }
 
         for (self.syntetics.items) |typeNode| {
-            std.debug.print("Continuing by syntetic\n", .{});
-            try typeNode.*.draw(file, allocator, accumulatedName);
+            try result.append(typeNode);
         }
+
+        if (self.universal.notEmpty()) {
+            try result.append(self.universal);
+        }
+
+        if (self.opening.notEmpty()) {
+            try result.append(self.opening);
+        }
+
+        if (self.closing.notEmpty()) {
+            try result.append(self.closing);
+        }
+
+        return result;
     }
+
+    // pub fn draw(self: *Node, file: std.fs.File, allocator: Allocator, accumulatedName: std.ArrayList(u8)) !void {
+    //     // getting following id
+
+    //     const backlinkFollowingId = utils.getBacklinkFollowingId(self);
+
+    //     const nodeHeader = try std.fmt.allocPrint(allocator, "subgraph cluster_{s}{} ", .{ accumulatedName.items, backlinkFollowingId });
+    //     try file.writeAll(nodeHeader);
+    //     try file.writeAll("{\n");
+    //     try file.writeAll("style=\"rounded\"\n");
+
+    //     // writing node label
+    //     const nodeLabelName = try utils.fixName2(allocator, accumulatedName);
+    //     const nodeLabel = try std.fmt.allocPrint(allocator, "label = \"{s}\";\n", .{nodeLabelName.items});
+    //     // if (self.isGeneric) {
+    //     //     const color = try std.fmt.allocPrint(allocator, "color = purple;\nstyle = filled;\n", .{});
+    //     //     try file.writeAll(color);
+    //     // }
+    //     try file.writeAll(nodeLabel);
+
+    //     // writing type nodes inside this node
+    //     // for (self.types.items) |typeNode| {
+    //     var it = self.types.valueIterator();
+    //     while (it.next()) |typeNode| { // TODO: print not listed here nodes
+    //         std.debug.print("COMPARING WITH {s}\n", .{typeNode.*.of});
+    //         const typeNodeLabel = try utils.fixName(allocator, typeNode.*.of, false);
+
+    //         const typeNodeId = try std.fmt.allocPrint(allocator, "{s}{s}", .{ accumulatedName.items, typeNode.*.of });
+    //         var typeNodeStyle: []const u8 = "";
+    //         switch (typeNode.*.kind) {
+    //             .gin => typeNodeStyle = try std.fmt.allocPrint(allocator, ",color=yellow,style=filled", .{}),
+    //             .gout => typeNodeStyle = try std.fmt.allocPrint(allocator, ",color=purple,style=filled", .{}),
+    //             .open => typeNodeStyle = try std.fmt.allocPrint(allocator, ",color=sienna,style=filled", .{}),
+    //             .close => typeNodeStyle = try std.fmt.allocPrint(allocator, ",color=sienna,style=filled", .{}),
+    //             .syntetic => typeNodeStyle = try std.fmt.allocPrint(allocator, ",color=blue,style=filled", .{}),
+    //             else => {},
+    //         }
+
+    //         const name = try std.fmt.allocPrint(allocator, "{s}{}[label=\"{s}\"{s}];\n", .{ typeNodeId, backlinkFollowingId, typeNodeLabel, typeNodeStyle });
+    //         try file.writeAll(name);
+    //     }
+
+    //     // TODO: extract copypaste
+    //     for (self.syntetics.items) |typeNode| {
+    //         std.debug.print("DRAWING SYNTETIC {s} with {} following\n", .{ typeNode.*.of, typeNode.followings.items.len });
+
+    //         const typeNodeLabel = try utils.fixName(allocator, typeNode.*.of, false);
+
+    //         const tname = if (std.mem.eql(u8, typeNode.*.of, "?")) "syntetic" else typeNode.*.of;
+    //         const typeNodeId = try std.fmt.allocPrint(allocator, "{s}{s}", .{ accumulatedName.items, tname });
+    //         var typeNodeStyle: []const u8 = "";
+    //         switch (typeNode.*.kind) {
+    //             .gin => typeNodeStyle = try std.fmt.allocPrint(allocator, ",color=yellow,style=filled", .{}),
+    //             .gout => typeNodeStyle = try std.fmt.allocPrint(allocator, ",color=purple,style=filled", .{}),
+    //             .open => typeNodeStyle = try std.fmt.allocPrint(allocator, ",color=sienna,style=filled", .{}),
+    //             .close => typeNodeStyle = try std.fmt.allocPrint(allocator, ",color=sienna,style=filled", .{}),
+    //             .syntetic => typeNodeStyle = try std.fmt.allocPrint(allocator, ",color=blue,style=filled", .{}),
+    //             else => {},
+    //         }
+
+    //         const name = try std.fmt.allocPrint(allocator, "{s}{}[label=\"{s}\"{s}];\n", .{ typeNodeId, backlinkFollowingId, typeNodeLabel, typeNodeStyle });
+    //         try file.writeAll(name);
+    //     }
+
+    //     // writing function finished by this node
+    //     for (self.endings.items) |decl| {
+    //         std.debug.print("Found ending {s}\n", .{decl.name});
+    //         const finished = try std.fmt.allocPrint(allocator, "{s}[color=darkgreen,style=filled,shape=signature];\n", .{decl.name});
+    //         try file.writeAll(finished);
+    //     }
+
+    //     try file.writeAll("}\n");
+
+    //     // for (self.types.items) |*typeNode| {
+    //     it = self.types.valueIterator();
+    //     while (it.next()) |typeNode| {
+    //         std.debug.print("Continuing by {s}\n", .{typeNode.*.of});
+    //         typeNode.*.preceding = self;
+    //         try typeNode.*.draw(file, allocator, accumulatedName);
+    //     }
+
+    //     for (self.syntetics.items) |typeNode| {
+    //         std.debug.print("Continuing by syntetic\n", .{});
+    //         try typeNode.*.draw(file, allocator, accumulatedName);
+    //     }
+    // }
 };

@@ -2,91 +2,111 @@ const std = @import("std");
 const Allocator = @import("std").mem.Allocator;
 const SegmentedList = @import("std").SegmentedList;
 
+const EngineError = @import("error.zig").EngineError;
 const Declaration = @import("tree.zig").Declaration;
 const Node = @import("node.zig").Node;
+const Following = @import("following.zig").Following;
 const utils = @import("utils.zig");
 const String = @import("../utils.zig").String;
 const TypeC = @import("../query.zig").TypeC;
+const main = @import("../main.zig");
+
+pub var PREROOT: TypeNode = undefined;
 
 pub const TypeNode = struct {
-    pub const TypeNodeKind = enum {
-        default,
-        name,
-        open,
-        close,
-
-        gin,
-        gout,
+    const KindE = enum {
         universal,
-
         syntetic,
+        nominative,
+        gnominative,
+        opening,
+        closing,
     };
 
-    pub const Of = String;
-
-    pub const Following = struct {
-        to: *Node, // to what node
-        backlink: ?*TypeNode, // same as de Bruijn index (helps to disinguish generics)
+    pub const Kind = union(KindE) {
+        universal: void,
+        syntetic: void,
+        nominative: []const u8,
+        gnominative: []const u8,
+        // generic: void,
+        opening: void,
+        closing: void,
     };
 
-    of: Of,
-    kind: TypeNodeKind,
+    kind: Kind,
 
-    // direct neighbour, they can be in other Node
-    super: std.ArrayList(*TypeNode),
-    sub: std.ArrayList(*TypeNode),
+    // direct neighbour, they can be in other Node(rly? - yes if function)
+    parents: std.ArrayList(*TypeNode),
+    childs: std.ArrayList(*TypeNode),
 
-    preceding: ?*Node, // TODO: check это не предыдущая Node, а текущая, которой принадлежит эта TypeNOde
+    of: *Node,
     followings: std.ArrayList(*Following),
 
-    pub fn init(allocator: Allocator, of: Of) !*TypeNode {
-        const super = std.ArrayList(*TypeNode).init(allocator);
-        const sub = std.ArrayList(*TypeNode).init(allocator);
+    pub fn init(allocator: Allocator, kind: Kind, of: *Node) EngineError!*TypeNode {
+        const parents = std.ArrayList(*TypeNode).init(allocator);
+        const childs = std.ArrayList(*TypeNode).init(allocator);
 
         const self = try allocator.create(TypeNode);
 
         const followings = std.ArrayList(*Following).init(allocator);
 
         // TODO: try to remove the hack caused by segfault
-        const newOf = try std.fmt.allocPrint(allocator, "{s}", .{of});
+        // const newOf = try std.fmt.allocPrint(allocator, "{s}", .{of});
 
         self.* = .{
-            .of = newOf,
-            .super = super,
-            .sub = sub,
-            .preceding = null,
+            .kind = kind,
+            .parents = parents,
+            .childs = childs,
+            .of = of,
             .followings = followings,
-            .kind = TypeNodeKind.default,
         };
 
         return self;
     }
 
-    pub fn isSyntetic(self: *TypeNode) bool {
-        switch (self.kind) {
-            .syntetic => return true,
-            else => return false,
+    pub fn notEmpty(self: *TypeNode) bool {
+        return self.followings.items.len == 0;
+    }
+
+    pub fn name(self: *TypeNode) []const u8 {
+        return switch (self.kind) {
+            .universal => "U",
+            .syntetic => self.synteticName(),
+            .nominative => self.kind.nominative,
+            .gnominative => self.kind.gnominative,
+            .opening => "opening322",
+            .closing => "closing322",
+        };
+    }
+
+    pub fn color(self: *TypeNode) []const u8 {
+        return switch (self.kind) {
+            .universal => "yellow",
+            .syntetic => "blue",
+            .nominative => "white",
+            .gnominative => "purple",
+            .opening => "brown",
+            .closing => "brown",
+        };
+    }
+
+    fn synteticName(self: *TypeNode) []const u8 {
+        var result = std.ArrayList(u8).init(std.heap.page_allocator); // TODO:
+
+        for (self.parents.items[0 .. self.parents.items.len - 1]) |parent| {
+            result.appendSlice(parent.name()) catch unreachable;
+            result.appendSlice(" & ") catch unreachable;
         }
-    }
 
-    pub fn isGout(self: *TypeNode) bool {
-        return switch (self.kind) {
-            .gout => true,
-            else => false,
-        };
-    }
+        result.appendSlice(self.parents.getLast().name()) catch unreachable;
 
-    pub fn isClosing(self: *TypeNode) bool {
-        return switch (self.kind) {
-            .close => true,
-            else => false,
-        };
+        return result.items; // TODO: check allocator releasing
     }
 
     pub fn setAsParentTo(parent: *TypeNode, child: *TypeNode) std.mem.Allocator.Error!void {
-        // TODO: add save check if it is already present
-        try parent.sub.append(child);
-        try child.super.append(parent);
+        // TODO: check if it is already present
+        try parent.childs.append(child);
+        try child.parents.append(parent);
     }
 
     pub fn getFollowing(self: *TypeNode, backlink: ?*TypeNode, allocator: Allocator) !*Node {
@@ -94,28 +114,38 @@ pub const TypeNode = struct {
         // that presents newly introduced generic or concrete type
         for (self.followings.items) |following| {
             if (following.backlink == backlink) {
-                // `to` is never null, because it bound with backlink(existing or not)
                 return following.to;
             }
         }
 
-        std.debug.print("Allocating following from TypeNode.Of='{s}'\n", .{self.of});
         // if no candidate, then it should be added
-        const following = try allocator.create(Following);
-        following.to = try Node.init(allocator, self);
-        following.backlink = backlink;
+        const following = try Following.init(allocator, self, backlink);
         try self.followings.append(following);
 
         return following.to;
     }
 
+    pub fn isSyntetic(self: *TypeNode) bool {
+        return switch (self.kind) {
+            .syntetic => true,
+            else => false,
+        };
+    }
+
+    pub fn isUniversal(self: *TypeNode) bool {
+        return switch (self.kind) {
+            .universal => true,
+            else => false,
+        };
+    }
+
     // TODO: move out, design driver for target language
     pub fn greater(self: *TypeNode, what: *TypeNode) bool {
-        if (std.mem.eql(u8, self.of, "T")) {
+        if (self.isUniversal()) {
             return true;
         }
 
-        if (std.mem.eql(u8, self.of, what.of)) {
+        if (std.mem.eql(u8, self.name(), what.name())) {
             return true;
         }
 
@@ -129,7 +159,7 @@ pub const TypeNode = struct {
         };
 
         for (pairs) |pair| {
-            if (std.mem.eql(u8, self.of, pair[0]) and std.mem.eql(u8, what.of, pair[1])) {
+            if (std.mem.eql(u8, self.name(), pair[0]) and std.mem.eql(u8, what.name(), pair[1])) {
                 return true;
             }
         }
@@ -137,175 +167,203 @@ pub const TypeNode = struct {
         return false;
     }
 
-    pub fn draw(self: *TypeNode, file: std.fs.File, allocator: Allocator, accumulatedName: std.ArrayList(u8)) anyerror!void {
-        std.debug.print("\nDrawing typeNode {s} with {} subs and {} followings\n", .{ self.of, self.sub.items.len, self.followings.items.len });
+    pub fn fullPathName(self: *TypeNode) anyerror![]const u8 {
+        return try std.fmt.allocPrint(main.gallocator, "{s}{s}", .{ try self.of.fullPathName(), self.name() });
+    }
 
-        const name = if (std.mem.eql(u8, self.of, "?")) "syntetic" else self.of;
-        const typeNodeId = try std.fmt.allocPrint(allocator, "{s}{s}", .{ accumulatedName.items, name });
+    pub fn draw(self: *TypeNode, file: std.fs.File, allocator: Allocator) anyerror!void {
+        try file.writeAll(try std.fmt.allocPrint(allocator, "{s}[color={s},style=filled]", .{ try self.fullPathName(), self.color() }));
+    }
 
-        var backlinkFollowingId: usize = 0;
-        if (self.preceding) |preceding| {
-            backlinkFollowingId = utils.getBacklinkFollowingId(preceding);
+    pub fn drawConnections(self: *TypeNode, file: std.fs.File, allocator: Allocator) !void {
+        for (self.childs.items) |child| {
+            try file.writeAll(try std.fmt.allocPrint(allocator, "{s} -> {s}[color=red,style=filled];\n", .{
+                try self.fullPathName(),
+                try child.fullPathName(),
+            }));
         }
 
-        for (self.followings.items, 0..) |following, followingId| {
-            var nextNodeAccumulatedName = try accumulatedName.clone();
+        for (self.followings.items) |following| {
+            try file.writeAll(try std.fmt.allocPrint(allocator, "{s} -> {s}[lhead=cluster_{s},color={s},style=filled];\n", .{
+                try self.fullPathName(),
+                try following.to.universal.fullPathName(),
+                try following.to.fullPathName(),
+                following.color(),
+            }));
 
-            var nameWasTransformed = false;
-
-            if (self.isGout()) {
-                nameWasTransformed = true;
-                std.debug.print("HERE IT IS: {s}\n", .{nextNodeAccumulatedName.items});
-                const start = std.mem.lastIndexOf(u8, nextNodeAccumulatedName.items, "functionopening322").? + 34;
-                std.debug.print("drop start {s}\n", .{nextNodeAccumulatedName.items[start..]});
-
-                const genericNominativeName = try std.fmt.allocPrint(allocator, "{s}leftangle322{s}rightangle322", .{ name, nextNodeAccumulatedName.items[start..] });
-                std.debug.print("TRE {s}\n", .{genericNominativeName});
-                try nextNodeAccumulatedName.replaceRange(start - 34, nextNodeAccumulatedName.items.len - start + 34, genericNominativeName);
-            }
-
-            if (!nameWasTransformed) {
-                // if (!(self.isClosing() and utils.endsWithRightAngle(nextNodeAccumulatedName.items))) {
-                try nextNodeAccumulatedName.appendSlice("functionarrow322");
-
-                try nextNodeAccumulatedName.appendSlice(name);
-                // }
-            }
-
-            const nextNodeId = try std.fmt.allocPrint(allocator, "{s}T", .{nextNodeAccumulatedName.items});
-
-            const toNextNode = try std.fmt.allocPrint(allocator, "{s}{} -> {s}{}[lhead = cluster_{s}{}];\n", .{ typeNodeId, backlinkFollowingId, nextNodeId, followingId, nextNodeAccumulatedName.items, followingId });
-            try file.writeAll(toNextNode);
-
-            try following.to.draw(file, allocator, nextNodeAccumulatedName);
-        }
-
-        std.debug.print("Super nodes {}\n", .{self.super.items.len});
-        next_super: for (self.super.items) |super| {
-            switch (super.kind) {
-                .close => {
-                    try drawLongJump(file, allocator, super, try getOpenInThisNode(self), accumulatedName, typeNodeId);
-                    break :next_super;
-                },
-                else => {},
-            }
-
-            const superName = if (std.mem.eql(u8, super.of, "?")) "syntetic" else super.of;
-            const superTypeNodeId = try std.fmt.allocPrint(allocator, "{s}{s}", .{ accumulatedName.items, superName });
-
-            const fromSuper = try std.fmt.allocPrint(allocator, "{s}{} -> {s}{}[color=red,style=filled];\n", .{ superTypeNodeId, backlinkFollowingId, typeNodeId, backlinkFollowingId });
-            try file.writeAll(fromSuper);
+            try following.to.draw(file, allocator);
         }
     }
 
-    fn getOpenInThisNode(self: *TypeNode) Node.NodeError!*TypeNode {
-        var current = self;
+    // pub fn draw(self: *TypeNode, file: std.fs.File, allocator: Allocator, accumulatedName: std.ArrayList(u8)) anyerror!void {
+    //     std.debug.print("\nDrawing typeNode {s} with {} subs and {} followings\n", .{ self.of, self.childs.items.len, self.followings.items.len });
 
-        while (true) {
-            std.debug.print("GOUP {s} {}\n", .{ current.of, current.kind });
-            switch (current.kind) {
-                .universal => break,
-                else => {},
-            }
+    //     const name = if (std.mem.eql(u8, self.of, "?")) "syntetic" else self.of;
+    //     const typeNodeId = try std.fmt.allocPrint(allocator, "{s}{s}", .{ accumulatedName.items, name });
 
-            for (current.super.items) |super| {
-                switch (super.kind) {
-                    .close => {},
-                    else => current = super,
-                }
-            }
-        }
+    //     var backlinkFollowingId: usize = 0;
+    //     if (self.curNode) |preceding| {
+    //         backlinkFollowingId = utils.getBacklinkFollowingId(preceding);
+    //     }
 
-        std.debug.print("GO {s} {}\n", .{ current.of, current.sub.items.len });
+    //     for (self.followings.items, 0..) |following, followingId| {
+    //         var nextNodeAccumulatedName = try accumulatedName.clone();
 
-        for (current.sub.items) |mbOpen| {
-            std.debug.print("GODO {}\n", .{mbOpen.kind});
-            switch (mbOpen.kind) {
-                .open => return mbOpen,
-                else => {},
-            }
-        }
+    //         var nameWasTransformed = false;
 
-        return Node.NodeError.ShouldBeUnreachable;
-    }
+    //         if (self.isGout()) {
+    //             nameWasTransformed = true;
+    //             std.debug.print("HERE IT IS: {s}\n", .{nextNodeAccumulatedName.items});
+    //             const start = std.mem.lastIndexOf(u8, nextNodeAccumulatedName.items, "functionopening322").? + 34;
+    //             std.debug.print("drop start {s}\n", .{nextNodeAccumulatedName.items[start..]});
 
-    // TODO: this is really dump hack, definitely should be fixed
-    fn drawLongJump(
-        file: std.fs.File,
-        allocator: Allocator,
-        end: *TypeNode,
-        current: *TypeNode,
-        accumulatedName: std.ArrayList(u8),
-        targetId: []const u8,
-    ) anyerror!void {
-        std.debug.print("draw long jump {s}\n", .{current.of});
+    //             const genericNominativeName = try std.fmt.allocPrint(allocator, "{s}leftangle322{s}rightangle322", .{ name, nextNodeAccumulatedName.items[start..] });
+    //             std.debug.print("TRE {s}\n", .{genericNominativeName});
+    //             try nextNodeAccumulatedName.replaceRange(start - 34, nextNodeAccumulatedName.items.len - start + 34, genericNominativeName);
+    //         }
 
-        if (current == end) {
-            std.debug.print("FOUND!!!\n", .{});
+    //         if (!nameWasTransformed) {
+    //             // if (!(self.isClosing() and utils.endsWithRightAngle(nextNodeAccumulatedName.items))) {
+    //             try nextNodeAccumulatedName.appendSlice("functionarrow322");
 
-            const currentId = try std.fmt.allocPrint(allocator, "{s}{s}", .{
-                accumulatedName.items,
-                current.of,
-            });
+    //             try nextNodeAccumulatedName.appendSlice(name);
+    //             // }
+    //         }
 
-            var backlinkFollowingId: usize = 0;
-            if (current.preceding) |preceding| {
-                backlinkFollowingId = utils.getBacklinkFollowingId(preceding);
-            }
+    //         const nextNodeId = try std.fmt.allocPrint(allocator, "{s}T", .{nextNodeAccumulatedName.items});
 
-            const fromSuper = try std.fmt.allocPrint(allocator, "{s}{} -> {s}{}[color=red,style=filled];\n", .{
-                currentId,
-                backlinkFollowingId,
-                targetId,
-                backlinkFollowingId,
-            });
-            try file.writeAll(fromSuper);
-        }
+    //         const toNextNode = try std.fmt.allocPrint(allocator, "{s}{} -> {s}{}[lhead = cluster_{s}{}];\n", .{ typeNodeId, backlinkFollowingId, nextNodeId, followingId, nextNodeAccumulatedName.items, followingId });
+    //         try file.writeAll(toNextNode);
 
-        var candidates = std.ArrayList(*TypeNode).init(allocator);
-        for (current.followings.items) |following| {
-            const universal = following.to.universal;
+    //         try following.to.draw(file, allocator, nextNodeAccumulatedName);
+    //     }
 
-            for (universal.sub.items) |sub| {
-                try candidates.append(sub);
-            }
-        }
+    //     std.debug.print("Super nodes {}\n", .{self.parents.items.len});
+    //     next_super: for (self.parents.items) |super| {
+    //         switch (super.kind) {
+    //             .close => {
+    //                 try drawLongJump(file, allocator, super, try getOpenInThisNode(self), accumulatedName, typeNodeId);
+    //                 break :next_super;
+    //             },
+    //             else => {},
+    //         }
 
-        for (candidates.items) |nextTypeNode| {
-            var nextAccumulatedName = try accumulatedName.clone();
+    //         const superName = if (std.mem.eql(u8, super.of, "?")) "syntetic" else super.of;
+    //         const superTypeNodeId = try std.fmt.allocPrint(allocator, "{s}{s}", .{ accumulatedName.items, superName });
 
-            const name = if (std.mem.eql(u8, current.of, "?")) "syntetic" else current.of;
+    //         const fromSuper = try std.fmt.allocPrint(allocator, "{s}{} -> {s}{}[color=red,style=filled];\n", .{ superTypeNodeId, backlinkFollowingId, typeNodeId, backlinkFollowingId });
+    //         try file.writeAll(fromSuper);
+    //     }
+    // }
 
-            var nameWasTransformed = false;
-            if (std.mem.eql(u8, nextTypeNode.of, "functionclosing322")) {
-                if (current.isGout()) {
-                    std.debug.print("HERE2 IT IS: {s}\n", .{nextAccumulatedName.items});
-                    nameWasTransformed = true;
-                    const start = std.mem.lastIndexOf(u8, nextAccumulatedName.items, "functionopening322").? + 34;
-                    std.debug.print("REST {s}\n", .{nextAccumulatedName.items[start..]});
-                    // const arrow = std.mem.lastIndexOf(u8, nextAccumulatedName.items[start..], "functionarrow322").?;
-                    // std.debug.print("FROM {}\n", .{start});
-                    std.debug.print("IN ANGLE NAME '{s}'\n", .{nextAccumulatedName.items[start..]});
+    // fn getOpenInThisNode(self: *TypeNode) Node.EngineError!*TypeNode {
+    //     var current = self;
 
-                    const genericNominativeName = try std.fmt.allocPrint(allocator, "{s}leftangle322{s}rightangle322", .{
-                        current.of,
-                        nextAccumulatedName.items[start..],
-                    });
-                    std.debug.print("TRE {s}\n", .{genericNominativeName});
-                    try nextAccumulatedName.replaceRange(start - 34, nextAccumulatedName.items.len - start + 34, genericNominativeName);
-                }
-                std.debug.print("BEE {s}\n", .{nextAccumulatedName.items});
-            }
+    //     while (true) {
+    //         std.debug.print("GOUP {s} {}\n", .{ current.of, current.kind });
+    //         switch (current.kind) {
+    //             .universal => break,
+    //             else => {},
+    //         }
 
-            if (!nameWasTransformed) {
-                // if (!(current.isClosing() and utils.endsWithRightAngle(nextAccumulatedName.items))) {
-                try nextAccumulatedName.appendSlice("functionarrow322");
-                try nextAccumulatedName.appendSlice(name);
-                // }
-                std.debug.print("NEE {s}\n", .{name});
-            }
+    //         for (current.parents.items) |super| {
+    //             switch (super.kind) {
+    //                 .close => {},
+    //                 else => current = super,
+    //             }
+    //         }
+    //     }
 
-            try drawLongJump(file, allocator, end, nextTypeNode, nextAccumulatedName, targetId);
-        }
-    }
+    //     std.debug.print("GO {s} {}\n", .{ current.of, current.childs.items.len });
+
+    //     for (current.childs.items) |mbOpen| {
+    //         std.debug.print("GODO {}\n", .{mbOpen.kind});
+    //         switch (mbOpen.kind) {
+    //             .open => return mbOpen,
+    //             else => {},
+    //         }
+    //     }
+
+    //     return Node.EngineError.ShouldBeUnreachable;
+    // }
+
+    // // TODO: this is really dump hack, definitely should be fixed
+    // fn drawLongJump(
+    //     file: std.fs.File,
+    //     allocator: Allocator,
+    //     end: *TypeNode,
+    //     current: *TypeNode,
+    //     accumulatedName: std.ArrayList(u8),
+    //     targetId: []const u8,
+    // ) anyerror!void {
+    //     std.debug.print("draw long jump {s}\n", .{current.of});
+
+    //     if (current == end) {
+    //         std.debug.print("FOUND!!!\n", .{});
+
+    //         const currentId = try std.fmt.allocPrint(allocator, "{s}{s}", .{
+    //             accumulatedName.items,
+    //             current.of,
+    //         });
+
+    //         var backlinkFollowingId: usize = 0;
+    //         if (current.curNode) |preceding| {
+    //             backlinkFollowingId = utils.getBacklinkFollowingId(preceding);
+    //         }
+
+    //         const fromSuper = try std.fmt.allocPrint(allocator, "{s}{} -> {s}{}[color=red,style=filled];\n", .{
+    //             currentId,
+    //             backlinkFollowingId,
+    //             targetId,
+    //             backlinkFollowingId,
+    //         });
+    //         try file.writeAll(fromSuper);
+    //     }
+
+    //     var candidates = std.ArrayList(*TypeNode).init(allocator);
+    //     for (current.followings.items) |following| {
+    //         const universal = following.to.universal;
+
+    //         for (universal.sub.items) |sub| {
+    //             try candidates.append(sub);
+    //         }
+    //     }
+
+    //     for (candidates.items) |nextTypeNode| {
+    //         var nextAccumulatedName = try accumulatedName.clone();
+
+    //         const name = if (std.mem.eql(u8, current.of, "?")) "syntetic" else current.of;
+
+    //         var nameWasTransformed = false;
+    //         if (std.mem.eql(u8, nextTypeNode.of, "functionclosing322")) {
+    //             if (current.isGout()) {
+    //                 std.debug.print("HERE2 IT IS: {s}\n", .{nextAccumulatedName.items});
+    //                 nameWasTransformed = true;
+    //                 const start = std.mem.lastIndexOf(u8, nextAccumulatedName.items, "functionopening322").? + 34;
+    //                 std.debug.print("REST {s}\n", .{nextAccumulatedName.items[start..]});
+    //                 // const arrow = std.mem.lastIndexOf(u8, nextAccumulatedName.items[start..], "functionarrow322").?;
+    //                 // std.debug.print("FROM {}\n", .{start});
+    //                 std.debug.print("IN ANGLE NAME '{s}'\n", .{nextAccumulatedName.items[start..]});
+
+    //                 const genericNominativeName = try std.fmt.allocPrint(allocator, "{s}leftangle322{s}rightangle322", .{
+    //                     current.of,
+    //                     nextAccumulatedName.items[start..],
+    //                 });
+    //                 std.debug.print("TRE {s}\n", .{genericNominativeName});
+    //                 try nextAccumulatedName.replaceRange(start - 34, nextAccumulatedName.items.len - start + 34, genericNominativeName);
+    //             }
+    //             std.debug.print("BEE {s}\n", .{nextAccumulatedName.items});
+    //         }
+
+    //         if (!nameWasTransformed) {
+    //             // if (!(current.isClosing() and utils.endsWithRightAngle(nextAccumulatedName.items))) {
+    //             try nextAccumulatedName.appendSlice("functionarrow322");
+    //             try nextAccumulatedName.appendSlice(name);
+    //             // }
+    //             std.debug.print("NEE {s}\n", .{name});
+    //         }
+
+    //         try drawLongJump(file, allocator, end, nextTypeNode, nextAccumulatedName, targetId);
+    //     }
+    // }
 };
