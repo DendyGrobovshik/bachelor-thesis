@@ -34,7 +34,7 @@ pub const Following = struct {
         return switch (self.kind) {
             .arrow => "black",
             .fake => "grey",
-            .generic => "green",
+            .generic => "cyan",
             .comma => "yellow",
         };
     }

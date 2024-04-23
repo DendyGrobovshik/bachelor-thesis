@@ -15,12 +15,12 @@ pub var PREROOT: TypeNode = undefined;
 
 pub const TypeNode = struct {
     const KindE = enum {
-        universal,
-        syntetic,
-        nominative,
-        gnominative,
-        opening,
-        closing,
+        universal, // https://en.wikipedia.org/wiki/Top_type
+        syntetic, // consstraints defined type
+        nominative, // just nominative with no generic parameters
+        gnominative, // nominative with generic parameters
+        opening, // opening parenthesis
+        closing, // closing parenthesis
     };
 
     pub const Kind = union(KindE) {
@@ -65,7 +65,13 @@ pub const TypeNode = struct {
     }
 
     pub fn notEmpty(self: *TypeNode) bool {
-        return self.followings.items.len == 0;
+        switch (self.kind) {
+            .opening => {},
+            .closing => {},
+            else => return true,
+        }
+
+        return self.followings.items.len != 0;
     }
 
     pub fn name(self: *TypeNode) []const u8 {
@@ -79,14 +85,25 @@ pub const TypeNode = struct {
         };
     }
 
+    pub fn labelName(self: *TypeNode) []const u8 {
+        return switch (self.kind) {
+            .universal => "U",
+            .syntetic => self.synteticName(),
+            .nominative => self.kind.nominative,
+            .gnominative => self.kind.gnominative,
+            .opening => "(",
+            .closing => ")",
+        };
+    }
+
     pub fn color(self: *TypeNode) []const u8 {
         return switch (self.kind) {
             .universal => "yellow",
             .syntetic => "blue",
-            .nominative => "white",
+            .nominative => "lightgrey",
             .gnominative => "purple",
-            .opening => "brown",
-            .closing => "brown",
+            .opening => "sienna",
+            .closing => "sienna",
         };
     }
 
@@ -95,7 +112,7 @@ pub const TypeNode = struct {
 
         for (self.parents.items[0 .. self.parents.items.len - 1]) |parent| {
             result.appendSlice(parent.name()) catch unreachable;
-            result.appendSlice(" & ") catch unreachable;
+            result.appendSlice("and") catch unreachable;
         }
 
         result.appendSlice(self.parents.getLast().name()) catch unreachable;
@@ -109,12 +126,12 @@ pub const TypeNode = struct {
         try child.parents.append(parent);
     }
 
-    pub fn getFollowing(self: *TypeNode, backlink: ?*TypeNode, allocator: Allocator) !*Node {
+    pub fn getFollowing(self: *TypeNode, backlink: ?*TypeNode, allocator: Allocator) !*Following {
         // here, in following can be only one backlink=null,
         // that presents newly introduced generic or concrete type
         for (self.followings.items) |following| {
             if (following.backlink == backlink) {
-                return following.to;
+                return following;
             }
         }
 
@@ -122,7 +139,24 @@ pub const TypeNode = struct {
         const following = try Following.init(allocator, self, backlink);
         try self.followings.append(following);
 
-        return following.to;
+        return following;
+    }
+
+    /// Assume that self is closing parenthesis
+    /// And that here is 2-arity function type between (T -> Array) (Array<T>)
+    /// Return the arrow
+    pub fn genericFollowing(self: *TypeNode) *Following { // TODO: check if it works correctly when gnominative have constraints
+        const gnominative = self.of.by;
+        const generic = gnominative.of.by;
+
+        for (generic.followings.items) |following| {
+            if (following.to == gnominative.of) {
+                return following;
+            }
+        }
+
+        // TODO: check in case of paralell modification
+        unreachable;
     }
 
     pub fn isSyntetic(self: *TypeNode) bool {
@@ -172,19 +206,25 @@ pub const TypeNode = struct {
     }
 
     pub fn draw(self: *TypeNode, file: std.fs.File, allocator: Allocator) anyerror!void {
-        try file.writeAll(try std.fmt.allocPrint(allocator, "{s}[color={s},style=filled]", .{ try self.fullPathName(), self.color() }));
+        try file.writeAll(try std.fmt.allocPrint(allocator, "{s}[label=\"{s}\",color={s},style=filled];\n", .{
+            try self.fullPathName(),
+            self.labelName(),
+            self.color(),
+        }));
     }
 
     pub fn drawConnections(self: *TypeNode, file: std.fs.File, allocator: Allocator) !void {
         for (self.childs.items) |child| {
-            try file.writeAll(try std.fmt.allocPrint(allocator, "{s} -> {s}[color=red,style=filled];\n", .{
-                try self.fullPathName(),
-                try child.fullPathName(),
-            }));
+            if (child.notEmpty()) {
+                try file.writeAll(try std.fmt.allocPrint(allocator, "{s} -> {s}[color=red,style=filled];\n", .{
+                    try self.fullPathName(),
+                    try child.fullPathName(),
+                }));
+            }
         }
 
         for (self.followings.items) |following| {
-            try file.writeAll(try std.fmt.allocPrint(allocator, "{s} -> {s}[lhead=cluster_{s},color={s},style=filled];\n", .{
+            try file.writeAll(try std.fmt.allocPrint(allocator, "{s} -> {s}[lhead=cluster_{s},color=\"{s}\",style=filled];\n", .{
                 try self.fullPathName(),
                 try following.to.universal.fullPathName(),
                 try following.to.fullPathName(),

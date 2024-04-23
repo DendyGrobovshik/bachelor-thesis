@@ -38,6 +38,8 @@ pub const Node = struct {
         const universal = try TypeNode.init(allocator, TypeNode.Kind.universal, self);
         const opening = try TypeNode.init(allocator, TypeNode.Kind.opening, self);
         const closing = try TypeNode.init(allocator, TypeNode.Kind.closing, self);
+        try universal.setAsParentTo(opening);
+        try universal.setAsParentTo(closing);
 
         self.* = .{
             .named = named,
@@ -164,17 +166,17 @@ pub const Node = struct {
                                 if (xChild == yChild) { // ptr equality
                                     // first common child may be not only one
                                     const commonChild = xChild;
-                                    std.debug.print("It's common child is {s}\n", .{commonChild.of});
+                                    // std.debug.print("It's common child is {s}\n", .{commonChild.of});
                                     // if common child is syntetic then no other commom childs can be
                                     if (commonChild.isSyntetic()) {
-                                        std.debug.print("is syntetic\n", .{});
+                                        // std.debug.print("is syntetic\n", .{});
                                         // TODO: not ignore operation result
                                         _ = parents.remove(x.*);
                                         _ = parents.remove(y.*);
                                         try parents.put(commonChild, {});
-                                        std.debug.print("parents was replaced with syntetic and parents size now: {}\n", .{parents.count()});
+                                        // std.debug.print("parents was replaced with syntetic and parents size now: {}\n", .{parents.count()});
                                     } else {
-                                        std.debug.print("not syntetic\n", .{});
+                                        // std.debug.print("not syntetic\n", .{});
                                         // common is not syntetic, so it should be divorced from parents with syntetic
 
                                         // breaking current relations
@@ -184,7 +186,7 @@ pub const Node = struct {
                                         // TODO: check bug if 2 times performed same type searching
                                         var parentsRemoved: u2 = 0;
                                         remove_parents_from_child: while (true) {
-                                            std.debug.print("Removing parent from child: '{s}' with {} super\n", .{ commonChild.of, commonChild.parents.items.len });
+                                            // std.debug.print("Removing parent from child: '{s}' with {} super\n", .{ commonChild.of, commonChild.parents.items.len });
                                             for (0..commonChild.parents.items.len) |ci| {
                                                 if (commonChild.parents.items[ci] == x.*) {
                                                     _ = commonChild.parents.swapRemove(ci);
@@ -255,7 +257,7 @@ pub const Node = struct {
             return syntetic;
         }
 
-        it = parents.keyIterator();
+        var it = parents.keyIterator();
         while (it.next()) |parent| {
             // std.debug.print("Next updated parent: {s}\n", .{parent.*.of});
 
@@ -301,7 +303,7 @@ pub const Node = struct {
             if (sub.isSyntetic()) {
                 pushedBelow = true;
                 for (sub.parents.items) |subParent| {
-                    std.debug.print("syn top: {s} {}\n", .{ subParent.of, subParent.greater(new) });
+                    // std.debug.print("syn top: {s} {}\n", .{ subParent.of, subParent.greater(new) });
                     if (!subParent.greater(new)) {
                         pushedBelow = false;
                     }
@@ -343,7 +345,12 @@ pub const Node = struct {
         const typec = try TypeC.init(allocator, ty);
 
         // TODO: handle constrains `A<T> < C`
-        return try self.searchHOF(typec, allocator);
+        const result = try self.searchHOF(typec, allocator);
+
+        const middle = result.genericFollowing();
+        middle.kind = Following.Kind.generic;
+
+        return result;
     }
 
     pub fn searchFunction(self: *Node, next: *TypeC, allocator: Allocator) EngineError!*TypeNode {
@@ -358,19 +365,17 @@ pub const Node = struct {
             .list => return EngineError.NotYetSupported,
         }
 
-        return try (try continuation.getFollowing(null, allocator)).search(to, allocator); // TODO: check null in following
+        return try (try continuation.getFollowing(null, allocator)).to.search(to, allocator); // TODO: check null in following
     }
 
     fn searchHOF(self: *Node, nextType: *TypeC, allocator: Allocator) EngineError!*TypeNode {
-        // const fopen = try self.searchPrimitive(TypeNode.Of{ .fopen = {} }, allocator);
-        // const fopen = try self.opening;
-        // fopen.kind = TypeNodeKind.open;
+        const followingOfOpening = try self.opening.getFollowing(null, allocator);
+        followingOfOpening.kind = Following.Kind.fake;
+        const fend = try followingOfOpening.to.search(nextType, allocator);
 
-        const fend = try (try self.opening.getFollowing(null, allocator)).search(nextType, allocator);
-
-        const fclose = (try fend.getFollowing(null, allocator)).closing;
-        // fclose.kind = TypeNodeKind.close;
-        // const fclose = try (try fend.getFollowing(allocator)).searchPrimitive(TypeNode.Of{ .fclose = {} }, allocator);
+        const followingToClosing = try fend.getFollowing(null, allocator);
+        followingToClosing.kind = Following.Kind.fake;
+        const fclose = followingToClosing.to.closing;
 
         return fclose;
     }
@@ -417,6 +422,9 @@ pub const Node = struct {
         try file.writeAll(try std.fmt.allocPrint(allocator, "subgraph cluster_{s}", .{try self.fullPathName()}));
         try file.writeAll("{\n");
         try file.writeAll("style=\"rounded\"\n");
+        try file.writeAll(try std.fmt.allocPrint(allocator, "label = \"{s}\";\n", .{
+            try utils.fixName(allocator, try self.fullPathName(), false),
+        }));
 
         for (self.endings.items) |decl| {
             try file.writeAll(try std.fmt.allocPrint(allocator, "{s}[color=darkgreen,style=filled,shape=signature];\n", .{decl.name}));

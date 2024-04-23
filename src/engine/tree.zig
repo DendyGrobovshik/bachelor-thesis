@@ -91,7 +91,7 @@ pub const Tree = struct {
         // // and all the declaration names are indistinguishable(last name are applied to all)
         const newName = try std.fmt.allocPrint(self.allocator, "{s}", .{decl_.name});
         const decl = try Declaration.init(self.allocator, newName, decl_.ty);
-        try following.endings.append(decl);
+        try following.to.endings.append(decl);
 
         // try leaf.endings.append(.{ .type = decl.type, .name = newName });
 
@@ -108,7 +108,7 @@ pub const Tree = struct {
         const leaf = try self.head.search(typec, self.allocator);
         const following = try leaf.getFollowing(try utils.getBacklink(typec), self.allocator);
 
-        return following.endings;
+        return following.to.endings;
     }
 };
 

@@ -35,8 +35,8 @@ pub fn fixName(allocator: Allocator, name: []const u8, trimBegin: bool) ![]const
     // std.debug.print("fix name: '{s}'\n", .{name});
 
     next = try replaceWith(allocator, next, "functionarrow322", " -> ");
-    next = try replaceWith(allocator, next, "functionopening322", "(");
-    next = try replaceWith(allocator, next, "functionclosing322", ")");
+    next = try replaceWith(allocator, next, "opening322", "(");
+    next = try replaceWith(allocator, next, "closing322", ")");
     next = try replaceWith(allocator, next, "leftangle322", "<");
     next = try replaceWith(allocator, next, "rightangle322", ">");
     next = try replaceWith(allocator, next, "( -> ", "(");
