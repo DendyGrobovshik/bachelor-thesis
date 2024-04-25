@@ -38,4 +38,20 @@ pub const Following = struct {
             .comma => "yellow",
         };
     }
+
+    pub fn arrow(self: *Following) []const u8 {
+        return switch (self.kind) {
+            .arrow => " -> ",
+            .fake => "",
+            .generic => " -> ",
+            .comma => " , ",
+        };
+    }
+
+    pub fn isGnominative(self: *Following) bool {
+        return switch (self.kind) {
+            .generic => true,
+            else => false,
+        };
+    }
 };

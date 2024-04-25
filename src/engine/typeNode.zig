@@ -71,6 +71,10 @@ pub const TypeNode = struct {
             else => return true,
         }
 
+        if (self.parents.items.len > 1 or self.childs.items.len > 0) {
+            return true;
+        }
+
         return self.followings.items.len != 0;
     }
 
@@ -88,7 +92,7 @@ pub const TypeNode = struct {
     pub fn labelName(self: *TypeNode) []const u8 {
         return switch (self.kind) {
             .universal => "U",
-            .syntetic => self.synteticName(),
+            .syntetic => "syntetic",
             .nominative => self.kind.nominative,
             .gnominative => self.kind.gnominative,
             .opening => "(",
@@ -169,6 +173,20 @@ pub const TypeNode = struct {
     pub fn isUniversal(self: *TypeNode) bool {
         return switch (self.kind) {
             .universal => true,
+            else => false,
+        };
+    }
+
+    pub fn isClosing(self: *TypeNode) bool {
+        return switch (self.kind) {
+            .closing => true,
+            else => false,
+        };
+    }
+
+    pub fn isGnominative(self: *TypeNode) bool {
+        return switch (self.kind) {
+            .gnominative => true,
             else => false,
         };
     }

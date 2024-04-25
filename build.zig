@@ -24,6 +24,15 @@ pub fn build(b: *std.Build) !void {
         .optimize = optimize,
     });
 
+    const logp = b.option(bool, "logp", "print parser log in console") orelse false;
+    const logt = b.option(bool, "logt", "print tree log in console") orelse false;
+
+    const options = b.addOptions();
+    options.addOption(bool, "logp", logp);
+    options.addOption(bool, "logt", logt);
+
+    exe.root_module.addOptions("config", options);
+
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default
     // step when running `zig build`).

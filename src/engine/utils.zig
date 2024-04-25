@@ -7,6 +7,7 @@ const Node = @import("node.zig").Node;
 const TypeNode = @import("typeNode.zig").TypeNode;
 const Type = @import("../query.zig").Type;
 const TypeC = @import("../query.zig").TypeC;
+const Following = @import("following.zig").Following;
 
 fn replaceWith(allocator: Allocator, str: []const u8, what: []const u8, with: []const u8) ![]const u8 {
     var result = std.ArrayList(u8).init(allocator);
@@ -105,6 +106,23 @@ pub fn endsWithRightAngle(str: []const u8) bool {
     return false;
 }
 
+pub fn followingTo(node: *Node) *Following {
+    for (node.by.followings.items) |following| {
+        if (following.to == node) {
+            return following;
+        }
+    }
+
+    unreachable;
+}
+
+pub fn trimRightArrow(str: []const u8) []const u8 {
+    if (str.len > 3 and std.mem.eql(u8, str[str.len - 4 ..], " -> ")) {
+        return str[0 .. str.len - 4];
+    }
+
+    return str;
+}
 // const Shuffle = std.ArrayList(Type);
 // // takes List type and return list of all its shuffles
 // fn reshufle(_: Type, _: Allocator) !std.ArrayList(Shuffle) {

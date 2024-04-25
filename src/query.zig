@@ -1,7 +1,12 @@
 const std = @import("std");
 const Allocator = @import("std").mem.Allocator;
+const RndGen = std.rand.DefaultPrng;
+
+const LOG = @import("config").logp;
 
 const TypeNode = @import("engine/typeNode.zig").TypeNode;
+const utils = @import("utils.zig");
+const main = @import("main.zig");
 
 const Nominative = struct {
     name: []const u8,
@@ -37,6 +42,39 @@ const Nominative = struct {
             return true;
         }
         return false;
+    }
+
+    pub fn generate(allocator: Allocator) anyerror!Nominative {
+        // std.debug.print("generating nominative\n", .{});
+        const name = try utils.randomName(allocator);
+        var generic: ?*TypeC = null;
+        if (main.rnd.random().int(u3) < 3) {
+            const typec = try allocator.create(TypeC);
+            // const list = try allocator.create(Type);
+            // list.* = .{ .list = try utils.generateGeneric(allocator) };
+            const ty = try allocator.create(Type);
+
+            var gname = std.ArrayList(u8).init(allocator);
+            try gname.append(main.rnd.random().intRangeLessThan(u8, 65, 90));
+
+            ty.* = .{
+                .nominative = Nominative{
+                    // .name = &[_]u8{},
+                    .name = gname.items,
+                },
+            };
+
+            typec.* = .{
+                .ty = ty,
+                .constraints = std.ArrayList(Constraint).init(allocator),
+            };
+            generic = typec;
+        }
+
+        return Nominative{
+            .name = name,
+            .generic = generic,
+        };
     }
 };
 
@@ -90,6 +128,14 @@ pub const Function = struct {
             else => try writer.print("{s}", .{this.to.ty}),
         }
     }
+
+    pub fn generate(allocator: Allocator) anyerror!Function {
+        // std.debug.print("generating function\n", .{});
+        return Function{
+            .from = try TypeC.generate(allocator),
+            .to = try TypeC.generate(allocator),
+        };
+    }
 };
 
 const Kind = enum { nominative, list, function };
@@ -110,6 +156,17 @@ pub const Type = union(Kind) {
             .list => writer.print("{s}", .{this.list}),
             .function => writer.print("{s}", .{this.function}),
         };
+    }
+
+    pub fn generate(allocator: Allocator) anyerror!*Type {
+        const self = try allocator.create(Type);
+
+        switch (main.rnd.random().int(u2)) {
+            0 => self.* = .{ .function = try Function.generate(allocator) },
+            else => self.* = .{ .nominative = try Nominative.generate(allocator) },
+        }
+
+        return self;
     }
 };
 
@@ -140,6 +197,11 @@ pub const TypeC = struct {
     }
 
     // TODO: support printing with constraint
+
+    pub fn generate(allocator: Allocator) anyerror!*TypeC {
+        // std.debug.print("generating typec\n", .{});
+        return TypeC.init(allocator, try Type.generate(allocator));
+    }
 };
 
 pub const Constraint = struct {
@@ -278,7 +340,9 @@ pub fn Parser() type {
             for (constraints.items) |constraint| {
                 // only nominative constraints currently supproted
                 if (self.typeMap.get(constraint.ty.ty.nominative.name)) |tyc| {
-                    std.debug.print("Constraint directly assigned to {s}\n", .{tyc});
+                    if (LOG) {
+                        std.debug.print("Constraint directly assigned to {s}\n", .{tyc});
+                    }
                     try tyc.constraints.append(constraint);
                 }
             }
@@ -290,13 +354,17 @@ pub fn Parser() type {
         }
 
         pub fn parseType(self: *Self) ParserError!*TypeC {
-            std.debug.print("Parsing {s} ... {}\n", .{ self.str, self.pos });
+            if (LOG) {
+                std.debug.print("Parsing {s} ... {}\n", .{ self.str, self.pos });
+            }
             const allocator = self.arena.allocator();
 
             const baseType = try self.parseEndType();
 
             const nextToken = self.next();
-            std.debug.print("Parsing continuation... {}\n", .{nextToken});
+            if (LOG) {
+                std.debug.print("Parsing continuation... {}\n", .{nextToken});
+            }
             switch (nextToken) {
                 Token.arrow => {
                     const cont = try self.parseType();
@@ -369,7 +437,9 @@ pub fn Parser() type {
 
         fn parseEndType(self: *Self) ParserError!*TypeC {
             var nextToken = self.next();
-            std.debug.print("Parsing end type... {}\n", .{nextToken});
+            if (LOG) {
+                std.debug.print("Parsing end type... {}\n", .{nextToken});
+            }
             switch (nextToken) {
                 .char => {
                     if (nextToken.char != '(') {
@@ -448,7 +518,9 @@ pub fn Parser() type {
         }
 
         pub fn parseConstraints(self: *Self) ParserError!std.ArrayList(Constraint) {
-            std.debug.print("Start parsrins constraints...\n", .{});
+            if (LOG) {
+                std.debug.print("Start parsrins constraints...\n", .{});
+            }
             const allocator = self.arena.allocator();
 
             var constraints = std.ArrayList(Constraint).init(allocator);

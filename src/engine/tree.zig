@@ -3,6 +3,8 @@ const Allocator = @import("std").mem.Allocator;
 const Arena = @import("std").heap.ArenaAllocator;
 const SegmentedList = @import("std").SegmentedList;
 
+const LOG = @import("config").logt;
+
 const EngineError = @import("error.zig").EngineError;
 const query = @import("../query.zig");
 const TypeC = @import("../query.zig").TypeC;
@@ -74,14 +76,19 @@ pub const Tree = struct {
                 "dot", "-T", "png", path, "-o", pngPath,
             },
         });
-        std.debug.print("TREE DRAWN...\n", .{});
+
+        if (LOG) {
+            std.debug.print("TREE DRAWN...\n", .{});
+        }
     }
 
     // no comma + generic transformed to func
     pub fn addDeclaration(self: *Tree, decl_: *Declaration) EngineError!void {
         // const decl = try utils.preprocessDeclaration(self.allocator, decl_);
 
-        std.debug.print("======ADDING DECLARATION... {s}\n", .{decl_.name});
+        if (LOG) {
+            std.debug.print("======ADDING DECLARATION... {s}\n", .{decl_.name});
+        }
 
         const leaf = try self.head.search(decl_.ty, self.allocator);
 
@@ -95,11 +102,15 @@ pub const Tree = struct {
 
         // try leaf.endings.append(.{ .type = decl.type, .name = newName });
 
+        if (LOG) {
         std.debug.print("=====DECLARATION ADDED\n", .{});
+        }
     }
 
     pub fn findDeclarations(self: *Tree, typec: *TypeC) EngineError!std.ArrayList(*Declaration) {
+        if (LOG) {
         std.debug.print("Searcing declaration...\n", .{});
+        }
 
         // // NOTE: for some reasom self.allocator is not enough and `recursiveTypeProcessor` fails
         // var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -120,14 +131,18 @@ pub fn parseQ(allocator: Allocator, str: []const u8) !query.Query {
         return err;
     };
 
+    if (LOG) {
     std.debug.print("PARSED Q: {}\n", .{q});
+    }
 
     return q;
 }
 
 // testing functions
 pub fn buildTreeFromFile(path: []const u8, allocator: Allocator) !Tree {
+    if (LOG) {
     std.debug.print("BUILDING TREE FROM FILE...\n", .{});
+    }
 
     var tree = try Tree.init(allocator);
 

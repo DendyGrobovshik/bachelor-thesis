@@ -1,11 +1,20 @@
 const std = @import("std");
+const Allocator = @import("std").mem.Allocator;
 const print = @import("std").debug.print;
+const RndGen = std.rand.DefaultPrng;
 
 const query = @import("query.zig");
 const tree = @import("engine/tree.zig");
+const utils = @import("utils.zig");
+
+pub var gallocator: Allocator = undefined;
+pub var rnd: RndGen = undefined;
 
 // compile and run: `zig build run`
 pub fn main() !void {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    gallocator = gpa.allocator();
+
     // stdout is for the actual output of your application, for example if you
     // are implementing gzip, then only the compressed bytes should be sent to
     // stdout, not any debugging messages.
@@ -22,7 +31,6 @@ pub fn main() !void {
     // var qwc = try query.Parser().init(std.heap.page_allocator, "A<T> -> (B -> (C, D<T>))");
     // var qwc = try query.Parser().init(std.heap.page_allocator, "(A, (A, B))");
     // const allocator = std.heap.page_allocator;
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
 
     _ = try tree.parseQ(allocator, "A, (R -> F)");
@@ -37,5 +45,43 @@ pub fn main() !void {
 
     for (res.items) |decl| {
         print("RESULT: {s}\n", .{decl.name});
+    }
+
+    {
+        var timer = try std.time.Timer.start();
+        try generateDecls();
+        print("TIME generateDecls: {}\n", .{std.fmt.fmtDuration(timer.read())});
+    }
+
+    {
+        var timer = try std.time.Timer.start();
+        t = try tree.buildTreeFromFile("./data/decls3.txt", allocator);
+        print("TIME buildTreeFromFile: {}\n", .{std.fmt.fmtDuration(timer.read())});
+    }
+
+    {
+        var timer = try std.time.Timer.start();
+        try t.draw("graph", allocator);
+        print("TIME tree draw: {}\n", .{std.fmt.fmtDuration(timer.read())});
+    }
+}
+
+fn generateDecls() !void {
+    const file = try std.fs.cwd().createFile(
+        "./data/decls3.txt",
+        .{ .truncate = true },
+    );
+    defer file.close();
+
+    rnd = RndGen.init(0);
+    for (0..100) |_| {
+        const typec = try std.fmt.allocPrint(gallocator, "{s}", .{
+            try query.TypeC.generate(gallocator),
+        });
+
+        try file.writeAll(try std.fmt.allocPrint(gallocator, "{s}: {s}\n", .{
+            try utils.randomName(gallocator),
+            typec,
+        }));
     }
 }

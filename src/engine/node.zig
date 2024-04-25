@@ -2,6 +2,8 @@ const std = @import("std");
 const Allocator = @import("std").mem.Allocator;
 const SegmentedList = @import("std").SegmentedList;
 
+const LOG = @import("config").logp;
+
 const EngineError = @import("error.zig").EngineError;
 const TypeNode = @import("typeNode.zig").TypeNode;
 const typeNode0 = @import("typeNode.zig");
@@ -99,7 +101,9 @@ pub const Node = struct {
 
         // generic are only constraint defined, and it requires another inserting algorithm
         for (next.constraints.items) |constraint| {
-            std.debug.print("Inserting constraint {s} < {s}\n", .{ next.ty.*, constraint });
+            if (LOG) {
+                std.debug.print("Inserting constraint {s} < {s}\n", .{ next.ty.*, constraint });
+            }
 
             for (constraint.superTypes.items) |superType| {
                 const constraintTypeNode = try self.search(superType, allocator);
@@ -325,7 +329,9 @@ pub const Node = struct {
     // fn currentInfimum(x: *TypeNode, y: *TypeNode) *TypeNode {}
 
     fn searchNominativeWithGeneric(self: *Node, next: *TypeC, allocator: Allocator) EngineError!*TypeNode {
-        std.debug.print("Searching nominative with generic \n", .{});
+        if (LOG) {
+            std.debug.print("Searching nominative with generic \n", .{});
+        }
         const generic = next.ty.nominative.generic orelse unreachable;
 
         // removing generic to escape recursive loop
@@ -354,7 +360,9 @@ pub const Node = struct {
     }
 
     pub fn searchFunction(self: *Node, next: *TypeC, allocator: Allocator) EngineError!*TypeNode {
-        std.debug.print("Searching function {s}\n", .{next.ty});
+        if (LOG) {
+            std.debug.print("Searching function {s}\n", .{next.ty});
+        }
         const from = next.ty.function.from;
         const to = next.ty.function.to;
 
@@ -404,6 +412,32 @@ pub const Node = struct {
         return try std.fmt.allocPrint(main.gallocator, "{s}{s}", .{ try self.by.fullPathName(), try self.byId() });
     }
 
+    pub fn labelName(self: *Node) anyerror![]const u8 {
+        if (self.by == &typeNode0.PREROOT) {
+            return "";
+        }
+
+        const following = utils.followingTo(self);
+        if (self.by.isClosing()) {
+            if (self.by.of.by.isGnominative()) {
+                // const genericToGnominative = self.by.genericFollowing();
+                return try std.fmt.allocPrint(main.gallocator, "{s}{s}<{s}>{s}", .{
+                    try self.by.of.by.of.by.of.by.of.labelName(),
+                    // utils.followingTo(self.by.of.by.of).arrow(),
+                    self.by.of.by.of.by.labelName(),
+                    self.by.of.by.labelName(),
+                    following.arrow(),
+                });
+            }
+        }
+
+        return try std.fmt.allocPrint(main.gallocator, "{s}{s}{s}", .{
+            try self.by.of.labelName(),
+            self.by.labelName(),
+            following.arrow(),
+        });
+    }
+
     pub fn byId(self: *Node) anyerror![]const u8 {
         var result: usize = 0;
 
@@ -423,7 +457,7 @@ pub const Node = struct {
         try file.writeAll("{\n");
         try file.writeAll("style=\"rounded\"\n");
         try file.writeAll(try std.fmt.allocPrint(allocator, "label = \"{s}\";\n", .{
-            try utils.fixName(allocator, try self.fullPathName(), false),
+            utils.trimRightArrow(try self.labelName()),
         }));
 
         for (self.endings.items) |decl| {
