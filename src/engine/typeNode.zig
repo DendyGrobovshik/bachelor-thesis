@@ -177,6 +177,13 @@ pub const TypeNode = struct {
         };
     }
 
+    pub fn isOpening(self: *TypeNode) bool {
+        return switch (self.kind) {
+            .opening => true,
+            else => false,
+        };
+    }
+
     pub fn isClosing(self: *TypeNode) bool {
         return switch (self.kind) {
             .closing => true,

@@ -6,3 +6,7 @@ generic1 : T -> T
 generic2 : T -> G
 constraints : T where T < Printable & String
 twocons : IntEven -> T where T < Printable & Array<Int>
+what : G<T> where T < Printalbe, G < Printable
+w2 : Array<String> -> Array<Int>
+zz : Array<Array<T>>
+zztop : Int -> Array<Array<T>>

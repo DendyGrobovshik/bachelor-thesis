@@ -418,14 +418,13 @@ pub const Node = struct {
         }
 
         const following = utils.followingTo(self);
-        if (self.by.isClosing()) {
-            if (self.by.of.by.isGnominative()) {
-                // const genericToGnominative = self.by.genericFollowing();
+        if (self.by.isClosing()) { // current is closing
+            const prevTypeNode = self.by.of.by;
+            if (prevTypeNode.isGnominative()) { // and previous is gnominative
                 return try std.fmt.allocPrint(main.gallocator, "{s}{s}<{s}>{s}", .{
-                    try self.by.of.by.of.by.of.by.of.labelName(),
-                    // utils.followingTo(self.by.of.by.of).arrow(),
-                    self.by.of.by.of.by.labelName(),
-                    self.by.of.by.labelName(),
+                    try getOpenParenthesis(self.by).of.labelName(), // type before this nominive with generic
+                    prevTypeNode.labelName(), // gnominative
+                    try getTypeInAngles(prevTypeNode.of), // type paremeter
                     following.arrow(),
                 });
             }
@@ -436,6 +435,40 @@ pub const Node = struct {
             self.by.labelName(),
             following.arrow(),
         });
+    }
+
+    fn getTypeInAngles(node: *Node) ![]const u8 {
+        if (node.by.isClosing()) {
+            // it collect type until matching opening node
+            // TODO: here is cringe idea: suffix = prefixsuffix - prefix
+            // return "TODO";
+            const presuf = try node.labelName();
+            const pre = try getOpenParenthesis(node.by).of.labelName();
+            const suf = presuf[pre.len..];
+
+            std.debug.print("presuf='{s}', pre='{s}' => suf='{s}'\n", .{ presuf, pre, suf });
+
+            return utils.trimRightArrow(suf);
+        }
+
+        return node.by.labelName();
+    }
+
+    /// Takes typeNode of closing parenthesis
+    /// Returns mathcing open parenthesis
+    fn getOpenParenthesis(typeNode: *TypeNode) *TypeNode {
+        var currentNode = typeNode;
+
+        while (!currentNode.isOpening()) {
+            if (currentNode.of.by.isClosing()) {
+                const innerPairOpening = getOpenParenthesis(currentNode.of.by);
+                currentNode = innerPairOpening.of.by; // node before inner opening parenthesis
+            } else {
+                currentNode = currentNode.of.by;
+            }
+        }
+
+        return currentNode;
     }
 
     pub fn byId(self: *Node) anyerror![]const u8 {
