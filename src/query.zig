@@ -196,7 +196,42 @@ pub const TypeC = struct {
         try writer.print("{s}", .{this.ty});
     }
 
-    // TODO: support printing with constraint
+    pub fn collectConstraints(self: *TypeC, allocator: Allocator) !std.ArrayList(*TypeC) {
+        var result = std.ArrayList(*TypeC).init(allocator);
+
+        if (self.constraints.items.len > 0) {
+            try result.append(self);
+        }
+
+        switch (self.ty.*) {
+            .function => {
+                try result.appendSlice((try self.ty.function.from.collectConstraints(allocator)).items);
+                try result.appendSlice((try self.ty.function.to.collectConstraints(allocator)).items);
+            },
+            .nominative => {
+                if (self.ty.nominative.generic) |generic| {
+                    try result.appendSlice((try generic.collectConstraints(allocator)).items);
+                }
+            },
+            .list => {
+                for (self.ty.list.list.items) |typec| {
+                    try result.appendSlice((try typec.collectConstraints(allocator)).items);
+                }
+            },
+        }
+
+        return result;
+    }
+
+    pub fn constraintsText(self: *TypeC, allocator: Allocator) ![]const u8 {
+        var result = try std.fmt.allocPrint(allocator, "{s}", .{self.constraints.items[0]});
+
+        for (self.constraints.items[1..]) |constraint| {
+            result = try std.fmt.allocPrint(allocator, "{s} & {s}", .{ result, constraint });
+        }
+
+        return result;
+    }
 
     pub fn generate(allocator: Allocator) anyerror!*TypeC {
         // std.debug.print("generating typec\n", .{});

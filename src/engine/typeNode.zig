@@ -198,6 +198,20 @@ pub const TypeNode = struct {
         };
     }
 
+    pub fn extractAllDecls(self: *TypeNode, allocator: Allocator) Allocator.Error!std.ArrayList(*Declaration) {
+        var result = std.ArrayList(*Declaration).init(allocator);
+
+        for (self.childs.items) |child| {
+            try result.appendSlice((try child.extractAllDecls(allocator)).items);
+        }
+
+        for (self.followings.items) |following| {
+            try result.appendSlice((try following.to.extractAllDecls(allocator)).items);
+        }
+
+        return result;
+    }
+
     // TODO: move out, design driver for target language
     pub fn greater(self: *TypeNode, what: *TypeNode) bool {
         if (self.isUniversal()) {

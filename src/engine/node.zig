@@ -404,6 +404,15 @@ pub const Node = struct {
         return self.types.get(what) orelse unreachable;
     }
 
+    pub fn extractAllDecls(self: *Node, allocator: Allocator) !std.ArrayList(*Declaration) {
+        var result = std.ArrayList(*Declaration).init(allocator);
+
+        try result.appendSlice(self.endings.items);
+        try result.appendSlice((try self.universal.extractAllDecls(allocator)).items);
+
+        return result;
+    }
+
     pub fn fullPathName(self: *Node) anyerror![]const u8 {
         if (self.by == &typeNode0.PREROOT) {
             return "";
@@ -445,8 +454,6 @@ pub const Node = struct {
             const presuf = try node.labelName();
             const pre = try getOpenParenthesis(node.by).of.labelName();
             const suf = presuf[pre.len..];
-
-            std.debug.print("presuf='{s}', pre='{s}' => suf='{s}'\n", .{ presuf, pre, suf });
 
             return utils.trimRightArrow(suf);
         }

@@ -103,13 +103,13 @@ pub const Tree = struct {
         // try leaf.endings.append(.{ .type = decl.type, .name = newName });
 
         if (LOG) {
-        std.debug.print("=====DECLARATION ADDED\n", .{});
+            std.debug.print("=====DECLARATION ADDED\n", .{});
         }
     }
 
     pub fn findDeclarations(self: *Tree, typec: *TypeC) EngineError!std.ArrayList(*Declaration) {
         if (LOG) {
-        std.debug.print("Searcing declaration...\n", .{});
+            std.debug.print("Searcing declaration...\n", .{});
         }
 
         // // NOTE: for some reasom self.allocator is not enough and `recursiveTypeProcessor` fails
@@ -120,6 +120,23 @@ pub const Tree = struct {
         const following = try leaf.getFollowing(try utils.getBacklink(typec), self.allocator);
 
         return following.to.endings;
+    }
+
+    pub fn extractAllDecls(self: *Tree, allocator: Allocator) !std.ArrayList(*Declaration) {
+        const allDecls = try self.head.extractAllDecls(allocator);
+
+        var unique = std.AutoHashMap(*Declaration, void).init(allocator);
+        for (allDecls.items) |decl| {
+            try unique.put(decl, {});
+        }
+
+        var result = std.ArrayList(*Declaration).init(allocator);
+        var it = unique.keyIterator();
+        while (it.next()) |decl| {
+            try result.append(decl.*);
+        }
+
+        return result;
     }
 };
 
@@ -132,7 +149,7 @@ pub fn parseQ(allocator: Allocator, str: []const u8) !query.Query {
     };
 
     if (LOG) {
-    std.debug.print("PARSED Q: {}\n", .{q});
+        std.debug.print("PARSED Q: {}\n", .{q});
     }
 
     return q;
@@ -141,7 +158,7 @@ pub fn parseQ(allocator: Allocator, str: []const u8) !query.Query {
 // testing functions
 pub fn buildTreeFromFile(path: []const u8, allocator: Allocator) !Tree {
     if (LOG) {
-    std.debug.print("BUILDING TREE FROM FILE...\n", .{});
+        std.debug.print("BUILDING TREE FROM FILE...\n", .{});
     }
 
     var tree = try Tree.init(allocator);
