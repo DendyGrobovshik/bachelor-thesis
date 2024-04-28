@@ -1,31 +1,11 @@
 const std = @import("std");
 const Allocator = @import("std").mem.Allocator;
 
-const query0 = @import("../query.zig");
-const tree0 = @import("tree.zig");
+const RawDecl = @import("utils.zig").RawDecl;
+const buildTree = @import("utils.zig").buildTree;
 
-const RawDecl = struct {
-    ty: []const u8,
-    name: []const u8,
-};
-
-pub fn buildTree(rawDecls: []const RawDecl, allocator: Allocator) !tree0.Tree {
-    var tree = try tree0.Tree.init(allocator);
-
-    for (rawDecls) |rawDecl| {
-        const q = try tree0.parseQ(allocator, rawDecl.ty);
-
-        const decl = try allocator.create(tree0.Declaration);
-        decl.* = .{
-            .name = rawDecl.name,
-            .ty = q.ty,
-        };
-
-        try tree.addDeclaration(decl);
-    }
-
-    return tree;
-}
+const query0 = @import("../../query.zig");
+const tree0 = @import("../tree.zig");
 
 // NOTE: All the tests the file are about exact search(no variance or inheritance)
 

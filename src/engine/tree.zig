@@ -82,6 +82,10 @@ pub const Tree = struct {
         }
     }
 
+    pub fn sweetLeaf(self: *Tree, typec: *TypeC, allocator: Allocator) EngineError!*TypeNode {
+        return try self.head.search(typec, allocator);
+    }
+
     // no comma + generic transformed to func
     pub fn addDeclaration(self: *Tree, decl_: *Declaration) EngineError!void {
         // const decl = try utils.preprocessDeclaration(self.allocator, decl_);
@@ -90,7 +94,7 @@ pub const Tree = struct {
             std.debug.print("======ADDING DECLARATION... {s}\n", .{decl_.name});
         }
 
-        const leaf = try self.head.search(decl_.ty, self.allocator);
+        const leaf = try self.sweetLeaf(decl_.ty, self.allocator);
 
         const following = try leaf.getFollowing(try utils.getBacklink(decl_.ty), self.allocator);
 

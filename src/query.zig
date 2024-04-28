@@ -538,7 +538,7 @@ pub fn Parser() type {
                     nextToken = self.next();
                     if (nextToken.char != '>') {
                         self.pos -= 1;
-                        return null;
+                        return ParserError.UnclosedAngleBracket;
                     }
 
                     return generic;

@@ -421,7 +421,7 @@ pub const Node = struct {
         return try std.fmt.allocPrint(main.gallocator, "{s}{s}", .{ try self.by.fullPathName(), try self.byId() });
     }
 
-    pub fn labelName(self: *Node) anyerror![]const u8 {
+    pub fn labelName(self: *Node, allocator: Allocator) anyerror![]const u8 {
         if (self.by == &typeNode0.PREROOT) {
             return "";
         }
@@ -430,29 +430,29 @@ pub const Node = struct {
         if (self.by.isClosing()) { // current is closing
             const prevTypeNode = self.by.of.by;
             if (prevTypeNode.isGnominative()) { // and previous is gnominative
-                return try std.fmt.allocPrint(main.gallocator, "{s}{s}<{s}>{s}", .{
-                    try getOpenParenthesis(self.by).of.labelName(), // type before this nominive with generic
+                return try std.fmt.allocPrint(allocator, "{s}{s}<{s}>{s}", .{
+                    try getOpenParenthesis(self.by).of.labelName(allocator), // type before this nominive with generic
                     prevTypeNode.labelName(), // gnominative
-                    try getTypeInAngles(prevTypeNode.of), // type paremeter
+                    try getTypeInAngles(prevTypeNode.of, allocator), // type paremeter
                     following.arrow(),
                 });
             }
         }
 
-        return try std.fmt.allocPrint(main.gallocator, "{s}{s}{s}", .{
-            try self.by.of.labelName(),
+        return try std.fmt.allocPrint(allocator, "{s}{s}{s}", .{
+            try self.by.of.labelName(allocator),
             self.by.labelName(),
             following.arrow(),
         });
     }
 
-    fn getTypeInAngles(node: *Node) ![]const u8 {
+    fn getTypeInAngles(node: *Node, allocator: Allocator) ![]const u8 {
         if (node.by.isClosing()) {
             // it collect type until matching opening node
             // TODO: here is cringe idea: suffix = prefixsuffix - prefix
             // return "TODO";
-            const presuf = try node.labelName();
-            const pre = try getOpenParenthesis(node.by).of.labelName();
+            const presuf = try node.labelName(allocator);
+            const pre = try getOpenParenthesis(node.by).of.labelName(allocator);
             const suf = presuf[pre.len..];
 
             return utils.trimRightArrow(suf);
@@ -497,7 +497,7 @@ pub const Node = struct {
         try file.writeAll("{\n");
         try file.writeAll("style=\"rounded\"\n");
         try file.writeAll(try std.fmt.allocPrint(allocator, "label = \"{s}\";\n", .{
-            utils.trimRightArrow(try self.labelName()),
+            utils.trimRightArrow(try self.labelName(allocator)),
         }));
 
         for (self.endings.items) |decl| {
