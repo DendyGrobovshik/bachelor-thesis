@@ -68,6 +68,7 @@ pub fn build(b: *std.Build) !void {
             .target = target,
             .optimize = optimize,
         });
+        unit_tests.root_module.addOptions("config", options);
 
         const run_unit_tests = b.addRunArtifact(unit_tests);
 
