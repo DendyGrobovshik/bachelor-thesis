@@ -78,10 +78,13 @@ pub const TypeNode = struct {
         return self.followings.items.len != 0;
     }
 
-    pub fn name(self: *TypeNode) []const u8 {
+    pub fn name(self: *TypeNode) ![]const u8 {
         return switch (self.kind) {
             .universal => "U",
-            .syntetic => self.synteticName(),
+            .syntetic => try self.synteticName(false),
+            // TODO: remove gallocator
+            // .nominative => try utils.simplifyName(self.kind.nominative, main.gallocator),
+            // .gnominative => try utils.simplifyName(self.kind.gnominative, main.gallocator),
             .nominative => self.kind.nominative,
             .gnominative => self.kind.gnominative,
             .opening => "opening322",
@@ -89,10 +92,10 @@ pub const TypeNode = struct {
         };
     }
 
-    pub fn labelName(self: *TypeNode) []const u8 {
+    pub fn labelName(self: *TypeNode) ![]const u8 {
         return switch (self.kind) {
             .universal => "U",
-            .syntetic => "syntetic",
+            .syntetic => try self.synteticName(true),
             .nominative => self.kind.nominative,
             .gnominative => self.kind.gnominative,
             .opening => "(",
@@ -111,15 +114,23 @@ pub const TypeNode = struct {
         };
     }
 
-    fn synteticName(self: *TypeNode) []const u8 {
+    fn synteticName(self: *TypeNode, isLabel: bool) Allocator.Error![]const u8 {
         var result = std.ArrayList(u8).init(std.heap.page_allocator); // TODO:
 
         for (self.parents.items[0 .. self.parents.items.len - 1]) |parent| {
-            result.appendSlice(parent.name()) catch unreachable;
-            result.appendSlice("and") catch unreachable;
+            if (isLabel) {
+                try result.appendSlice(try parent.of.labelName(main.gallocator));
+            } else {
+                try result.appendSlice(try parent.of.fullPathName());
+            }
+            if (isLabel) {
+                try result.appendSlice(" & ");
+            } else {
+                try result.appendSlice("and");
+            }
         }
 
-        result.appendSlice(self.parents.getLast().name()) catch unreachable;
+        try result.appendSlice(try self.parents.getLast().name());
 
         return result.items; // TODO: check allocator releasing
     }
@@ -213,12 +224,12 @@ pub const TypeNode = struct {
     }
 
     // TODO: move out, design driver for target language
-    pub fn greater(self: *TypeNode, what: *TypeNode) bool {
+    pub fn greater(self: *TypeNode, what: *TypeNode) !bool {
         if (self.isUniversal()) {
             return true;
         }
 
-        if (std.mem.eql(u8, self.name(), what.name())) {
+        if (std.mem.eql(u8, try self.name(), try what.name())) {
             return true;
         }
 
@@ -232,7 +243,7 @@ pub const TypeNode = struct {
         };
 
         for (pairs) |pair| {
-            if (std.mem.eql(u8, self.name(), pair[0]) and std.mem.eql(u8, what.name(), pair[1])) {
+            if (std.mem.eql(u8, try self.name(), pair[0]) and std.mem.eql(u8, try what.name(), pair[1])) {
                 return true;
             }
         }
@@ -240,14 +251,14 @@ pub const TypeNode = struct {
         return false;
     }
 
-    pub fn fullPathName(self: *TypeNode) anyerror![]const u8 {
-        return try std.fmt.allocPrint(main.gallocator, "{s}{s}", .{ try self.of.fullPathName(), self.name() });
+    pub fn fullPathName(self: *TypeNode) Allocator.Error![]const u8 {
+        return try std.fmt.allocPrint(main.gallocator, "{s}{s}", .{ try self.of.fullPathName(), try self.name() });
     }
 
     pub fn draw(self: *TypeNode, file: std.fs.File, allocator: Allocator) anyerror!void {
         try file.writeAll(try std.fmt.allocPrint(allocator, "{s}[label=\"{s}\",color={s},style=filled];\n", .{
             try self.fullPathName(),
-            self.labelName(),
+            try self.labelName(),
             self.color(),
         }));
     }

@@ -81,7 +81,7 @@ pub const Node = struct {
         if (self.named.get(next.ty.nominative.name)) |alreadyInserted| {
             return alreadyInserted;
         }
-        const name = next.ty.nominative.name;
+        const name = try utils.simplifyName(next.ty.nominative.name, allocator);
         var newTypeNode: *TypeNode = undefined;
         if (next.ty.nominative.hadGeneric) {
             newTypeNode = try TypeNode.init(allocator, .{ .gnominative = name }, self);
@@ -295,7 +295,7 @@ pub const Node = struct {
         var pushedBelow = false;
 
         for (current.childs.items) |sub| {
-            if (sub.greater(new)) {
+            if (try sub.greater(new)) {
                 pushedBelow = true;
                 _ = try solveNominativePosition(sub, new);
             }
@@ -308,7 +308,7 @@ pub const Node = struct {
                 pushedBelow = true;
                 for (sub.parents.items) |subParent| {
                     // std.debug.print("syn top: {s} {}\n", .{ subParent.of, subParent.greater(new) });
-                    if (!subParent.greater(new)) {
+                    if (!(try subParent.greater(new))) {
                         pushedBelow = false;
                     }
                 }
@@ -413,7 +413,7 @@ pub const Node = struct {
         return result;
     }
 
-    pub fn fullPathName(self: *Node) anyerror![]const u8 {
+    pub fn fullPathName(self: *Node) Allocator.Error![]const u8 {
         if (self.by == &typeNode0.PREROOT) {
             return "";
         }
@@ -421,7 +421,7 @@ pub const Node = struct {
         return try std.fmt.allocPrint(main.gallocator, "{s}{s}", .{ try self.by.fullPathName(), try self.byId() });
     }
 
-    pub fn labelName(self: *Node, allocator: Allocator) anyerror![]const u8 {
+    pub fn labelName(self: *Node, allocator: Allocator) Allocator.Error![]const u8 {
         if (self.by == &typeNode0.PREROOT) {
             return "";
         }
@@ -432,7 +432,7 @@ pub const Node = struct {
             if (prevTypeNode.isGnominative()) { // and previous is gnominative
                 return try std.fmt.allocPrint(allocator, "{s}{s}<{s}>{s}", .{
                     try getOpenParenthesis(self.by).of.labelName(allocator), // type before this nominive with generic
-                    prevTypeNode.labelName(), // gnominative
+                    try prevTypeNode.labelName(), // gnominative
                     try getTypeInAngles(prevTypeNode.of, allocator), // type paremeter
                     following.arrow(),
                 });
@@ -441,7 +441,7 @@ pub const Node = struct {
 
         return try std.fmt.allocPrint(allocator, "{s}{s}{s}", .{
             try self.by.of.labelName(allocator),
-            self.by.labelName(),
+            try self.by.labelName(),
             following.arrow(),
         });
     }
@@ -478,7 +478,7 @@ pub const Node = struct {
         return currentNode;
     }
 
-    pub fn byId(self: *Node) anyerror![]const u8 {
+    pub fn byId(self: *Node) Allocator.Error![]const u8 {
         var result: usize = 0;
 
         for (self.by.followings.items, 0..) |following, i| {

@@ -8,6 +8,7 @@ const TypeNode = @import("typeNode.zig").TypeNode;
 const Type = @import("../query.zig").Type;
 const TypeC = @import("../query.zig").TypeC;
 const Following = @import("following.zig").Following;
+const main = @import("../main.zig");
 
 fn replaceWith(allocator: Allocator, str: []const u8, what: []const u8, with: []const u8) ![]const u8 {
     var result = std.ArrayList(u8).init(allocator);
@@ -122,6 +123,18 @@ pub fn trimRightArrow(str: []const u8) []const u8 {
     }
 
     return str;
+}
+
+pub fn simplifyName(name: []const u8, allocator: Allocator) ![]const u8 {
+    if (std.mem.count(u8, name, ".") > 0) {
+        return try replaceWith(allocator, name, ".", "dot");
+    }
+
+    if (std.mem.count(u8, name, "Node") > 0) {
+        return try replaceWith(allocator, name, "Node", "NodeHack");
+    }
+
+    return name;
 }
 // const Shuffle = std.ArrayList(Type);
 // // takes List type and return list of all its shuffles

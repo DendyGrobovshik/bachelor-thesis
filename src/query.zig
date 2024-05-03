@@ -82,6 +82,24 @@ const List = struct {
     list: std.ArrayList(*TypeC),
     ordered: bool = false,
 
+    pub fn init(allocator: Allocator, types: std.ArrayList(*TypeC)) *TypeC {
+        const typec = try allocator.create(TypeC);
+        const ty = try allocator.create(Type);
+
+        ty.* = .{
+            .list = List{
+                .list = types,
+            },
+        };
+
+        typec.* = .{
+            .ty = ty,
+            .constraints = std.ArrayList(Constraint).init(allocator),
+        };
+
+        return typec;
+    }
+
     pub fn format(
         this: List,
         comptime _: []const u8,
@@ -185,6 +203,13 @@ pub const TypeC = struct {
         };
 
         return self;
+    }
+
+    pub inline fn isFunction(self: *TypeC) bool {
+        return switch (self.ty.kind) {
+            .function => true,
+            else => false,
+        };
     }
 
     pub fn format(
@@ -631,7 +656,12 @@ pub fn Parser() type {
             }
 
             var end = self.pos;
-            while (std.ascii.isAlphabetic(self.str[end])) {
+            while (std.ascii.isAlphabetic(self.str[end]) or
+                self.str[end] == '.' or
+                self.str[end] == '_' or
+                self.str[end] == '$' or // TODO: '$' allowed on any position
+                std.ascii.isDigit(self.str[end]))
+            { // '.' is part of fq name
                 end += 1;
             }
             if (self.pos != end) {
