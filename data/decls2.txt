@@ -10,3 +10,7 @@ what : G<T> where T < Printalbe, G < Printable
 w2 : Array<String> -> Array<Int>
 zz : Array<Array<T>>
 zztop : Int -> Array<Array<T>>
+gg : HashMap<Int, String> -> Int
+x : Array<Int>
+y : Array<Int>
+pair : (String, Int)

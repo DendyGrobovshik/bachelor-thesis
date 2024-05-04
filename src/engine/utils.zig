@@ -211,6 +211,7 @@ pub fn getBacklink(ty: *TypeC) EngineError!?*TypeNode {
 
     switch (lastType.ty.*) {
         .nominative => return lastType.ty.nominative.typeNode,
+        .list => return null, // TODO: idk what should be here
         else => return EngineError.NotYetSupported,
     }
 }
@@ -224,6 +225,6 @@ pub fn getLastNonCompisiteType(ty: *TypeC) EngineError!*TypeC {
 
             return ty;
         },
-        else => return EngineError.NotYetSupported,
+        else => return ty.ty.list.list.getLast(),
     }
 }

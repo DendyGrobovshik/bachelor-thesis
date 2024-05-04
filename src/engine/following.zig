@@ -35,7 +35,7 @@ pub const Following = struct {
             .arrow => "black",
             .fake => "grey",
             .generic => "cyan",
-            .comma => "yellow",
+            .comma => "blue",
         };
     }
 

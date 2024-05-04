@@ -7,6 +7,7 @@ const buildTree = @import("utils.zig").buildTree;
 const utils = @import("../utils.zig");
 const query0 = @import("../../query.zig");
 const tree0 = @import("../tree.zig");
+const Following = @import("../following.zig").Following;
 
 test "label of following nodes are equal to string representation of types" {
     const types = [_][]const u8{
@@ -37,5 +38,5 @@ fn getLabelName(tyStr: []const u8) ![]const u8 {
     const query = try tree0.parseQ(allocator, rawDecl.ty);
     const leaf = try searchIndex.sweetLeaf(query.ty, allocator);
 
-    return utils.trimRightArrow(try (try leaf.getFollowing(null, allocator)).to.labelName(allocator));
+    return utils.trimRightArrow(try (try leaf.getFollowing(null, Following.Kind.arrow, allocator)).to.labelName(allocator));
 }

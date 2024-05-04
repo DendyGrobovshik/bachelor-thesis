@@ -113,8 +113,8 @@ test "two with same type" {
     const rawDecls = [_]RawDecl{
         RawDecl{ .ty = "Int -> String", .name = "foo" },
         RawDecl{ .ty = "Int -> String", .name = "boo" },
-        RawDecl{ .ty = "String -> String", .name = "boo" },
-        RawDecl{ .ty = "String -> String", .name = "boo" },
+        RawDecl{ .ty = "String -> String", .name = "goo" },
+        RawDecl{ .ty = "String -> String", .name = "doo" },
     };
     var searchIndex = try buildTree(&rawDecls, allocator);
 
@@ -126,6 +126,29 @@ test "two with same type" {
     }
 }
 
+test "finding lists" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const allocator = gpa.allocator();
+
+    const rawDecls = [_]RawDecl{
+        RawDecl{ .ty = "HashMap<K, V>", .name = "foo1" },
+        RawDecl{ .ty = "HashkMap<K, V> -> HashMap<K, V>", .name = "foo2" },
+        RawDecl{ .ty = "(Int, String)", .name = "foo3" },
+        RawDecl{ .ty = "Int -> (Int, (String, Bool))", .name = "foo4" },
+        RawDecl{ .ty = "HashMap<(Int, String), Bool>", .name = "foo5" },
+        RawDecl{ .ty = "HashMap<(Int, Array<T>), HashMap<K, String>>", .name = "foo5" },
+    };
+    var searchIndex = try buildTree(&rawDecls, allocator);
+
+    for (rawDecls) |rawDecl| {
+        const query = try tree0.parseQ(allocator, rawDecl.ty);
+        const decls = try searchIndex.findDeclarations(query.ty);
+
+        try std.testing.expectEqual(decls.items.len, 1);
+        try std.testing.expectEqualStrings(decls.getLast().name, rawDecl.name);
+    }
+}
+
 test "the types that were added to the tree are found by the exact query" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
@@ -133,6 +156,7 @@ test "the types that were added to the tree are found by the exact query" {
     const rawDecls = [_]RawDecl{
         RawDecl{ .ty = "Int -> Int", .name = "foo1" },
         RawDecl{ .ty = "String -> Int", .name = "foo2" },
+        RawDecl{ .ty = "(String, Int)", .name = "foo2" },
         RawDecl{ .ty = "Array<Int> -> Int", .name = "foo3" },
         RawDecl{ .ty = "(Int -> String) -> Int -> String", .name = "foo4" },
         RawDecl{ .ty = "Int -> String -> Int -> String", .name = "foo5" },
@@ -141,6 +165,12 @@ test "the types that were added to the tree are found by the exact query" {
         RawDecl{ .ty = "T where T < Printable & String", .name = "foo8" },
         RawDecl{ .ty = "IntEven -> T where T < Printable & Array<Int>", .name = "foo9" },
         RawDecl{ .ty = "G<T> where T < Printalbe, G < Printable", .name = "foo10" },
+        RawDecl{ .ty = "HashMap<K, V>", .name = "foo11" },
+        RawDecl{ .ty = "HashkMap<K, V> -> HashMap<K, V>", .name = "foo12" },
+        RawDecl{ .ty = "(Int, String)", .name = "foo13" },
+        RawDecl{ .ty = "Int -> (Int, (String, Bool))", .name = "foo14" },
+        RawDecl{ .ty = "HashMap<(Int, String), Bool>", .name = "foo15" },
+        RawDecl{ .ty = "HashMap<(Int, Array<T>), HashMap<K, String>>", .name = "foo16" },
     };
     var searchIndex = try buildTree(&rawDecls, allocator);
 

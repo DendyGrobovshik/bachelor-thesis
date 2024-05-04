@@ -61,7 +61,7 @@ pub const Node = struct {
         switch (next.ty.*) {
             .nominative => return try self.searchNominative(next, allocator),
             .function => return try self.searchFunction(next, allocator),
-            .list => return EngineError.NotYetSupported,
+            .list => return try self.searchList(next, allocator),
         }
     }
 
@@ -326,8 +326,6 @@ pub const Node = struct {
         // return new;
     }
 
-    // fn currentInfimum(x: *TypeNode, y: *TypeNode) *TypeNode {}
-
     fn searchNominativeWithGeneric(self: *Node, next: *TypeC, allocator: Allocator) EngineError!*TypeNode {
         if (LOG) {
             std.debug.print("Searching nominative with generic \n", .{});
@@ -342,9 +340,15 @@ pub const Node = struct {
             .hadGeneric = true,
         } };
 
+        const from = switch (generic.ty.*) {
+            .list => generic,
+            .nominative => generic,
+            .function => return EngineError.NotYetSupported,
+        };
+
         const ty = try allocator.create(Type);
         ty.function = .{
-            .from = generic.ty.list.list.items[0], // TODO: support not only 1-parameter genrics
+            .from = from,
             .to = try TypeC.init(allocator, newNextType),
         };
 
@@ -370,18 +374,46 @@ pub const Node = struct {
         switch (from.ty.*) {
             .nominative => continuation = try self.searchNominative(from, allocator),
             .function => continuation = try self.searchHOF(from, allocator),
-            .list => return EngineError.NotYetSupported,
+            .list => continuation = try self.searchList(from, allocator),
         }
 
-        return try (try continuation.getFollowing(null, allocator)).to.search(to, allocator); // TODO: check null in following
+        // TODO: it's not true that it always nominative
+        var followingKind = Following.Kind.arrow;
+        switch (to.ty.*) {
+            .nominative => {
+                if (to.ty.nominative.hadGeneric) {
+                    followingKind = Following.Kind.generic;
+                }
+            },
+            else => {},
+        }
+
+        const following = try continuation.getFollowing(null, followingKind, allocator);
+        return try (following).to.search(to, allocator); // TODO: check null in following
+    }
+
+    fn searchList(self: *Node, next: *TypeC, allocator: Allocator) EngineError!*TypeNode {
+        if (!next.ty.list.ordered) {
+            return EngineError.NotYetSupported;
+        }
+
+        var current = self;
+        var typeNode: *TypeNode = undefined;
+        for (next.ty.list.list.items) |nextType| {
+            typeNode = try current.search(nextType, allocator);
+
+            current = (try typeNode.getFollowing(null, Following.Kind.comma, allocator)).to; // TODO: check backlink
+        }
+
+        return typeNode;
     }
 
     fn searchHOF(self: *Node, nextType: *TypeC, allocator: Allocator) EngineError!*TypeNode {
-        const followingOfOpening = try self.opening.getFollowing(null, allocator);
+        const followingOfOpening = try self.opening.getFollowing(null, Following.Kind.fake, allocator);
         followingOfOpening.kind = Following.Kind.fake;
         const fend = try followingOfOpening.to.search(nextType, allocator);
 
-        const followingToClosing = try fend.getFollowing(null, allocator);
+        const followingToClosing = try fend.getFollowing(null, Following.Kind.fake, allocator);
         followingToClosing.kind = Following.Kind.fake;
         const fclose = followingToClosing.to.closing;
 

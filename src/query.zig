@@ -22,6 +22,17 @@ const Nominative = struct {
     // So, this with fact that equally named nominative types are points to the same `*Nomintive`
     typeNode: ?*TypeNode = null,
 
+    pub fn init(name: []const u8, generic: ?*TypeC, allocator: Allocator) !*Type {
+        const ty = try allocator.create(Type);
+
+        ty.* = .{ .nominative = .{
+            .name = name,
+            .generic = generic,
+        } };
+
+        return ty;
+    }
+
     pub fn format(
         this: Nominative,
         comptime _: []const u8,
@@ -30,7 +41,15 @@ const Nominative = struct {
     ) !void {
         try writer.print("{s}", .{this.name});
         if (this.generic) |ty| {
+            switch (ty.ty.*) { // TODO: this is a hack, should be fixed
+                .list => ty.ty.list.ordered = false,
+                else => {},
+            }
             try writer.print("<{s}>", .{ty});
+            switch (ty.ty.*) {
+                .list => ty.ty.list.ordered = true,
+                else => {},
+            }
         }
     }
 
@@ -59,7 +78,6 @@ const Nominative = struct {
 
             ty.* = .{
                 .nominative = Nominative{
-                    // .name = &[_]u8{},
                     .name = gname.items,
                 },
             };
@@ -368,7 +386,7 @@ pub fn Parser() type {
             self.arena.deinit();
         }
 
-        // Debug only
+        /// Debug only
         pub fn printError(self: *Self, err: ParserError) void {
             std.debug.print("Error happend: {}\n", .{err});
             for (0..self.str.len - 1) |i| {
@@ -522,11 +540,7 @@ pub fn Parser() type {
                     const allocator = self.arena.allocator();
                     const generic = try self.parseGeneric();
 
-                    const ty = try allocator.create(Type);
-                    ty.* = .{ .nominative = .{
-                        .name = nextToken.name,
-                        .generic = generic,
-                    } };
+                    const ty = try Nominative.init(nextToken.name, generic, allocator);
 
                     const typeStr = try std.fmt.allocPrint(allocator, "{}", .{ty});
                     if (self.typeMap.get(typeStr)) |savedTy| {
@@ -546,7 +560,7 @@ pub fn Parser() type {
 
         fn parseGeneric(self: *Self) ParserError!?*TypeC {
             var nextToken = self.next();
-            // std.debug.print("Parsing generic... {}\n", .{nextToken});
+
             switch (nextToken) {
                 .char => {
                     if (nextToken.char != '<') {
@@ -566,7 +580,7 @@ pub fn Parser() type {
                         return ParserError.UnclosedAngleBracket;
                     }
 
-                    return generic;
+                    return try unwrapGeneric(generic);
                 },
                 .name => return ParserError.UnexpectedNominative,
                 .arrow => {
@@ -575,6 +589,22 @@ pub fn Parser() type {
                 },
                 .end => return null,
             }
+        }
+
+        // TODO: free memory
+        pub fn unwrapGeneric(generic: *TypeC) ParserError!*TypeC {
+            switch (generic.ty.*) {
+                .list => {
+                    if (generic.ty.list.list.items.len == 1) {
+                        return generic.ty.list.list.items[0];
+                    }
+
+                    generic.ty.list.ordered = true;
+                },
+                else => {},
+            }
+
+            return generic;
         }
 
         pub fn parseConstraints(self: *Self) ParserError!std.ArrayList(Constraint) {
@@ -833,7 +863,7 @@ test "complicated type" {
 
     const actual = try std.fmt.allocPrint(arena.allocator(), "{}", .{ty});
 
-    try std.testing.expectEqualStrings("[A, B] -> ((A, B) -> (A<[T]> -> (B -> (C, D<[T]>))))", actual);
+    try std.testing.expectEqualStrings("[A, B] -> ((A, B) -> (A<T> -> (B -> (C, D<T>))))", actual);
 }
 
 test "complicated type 2" {
@@ -846,7 +876,7 @@ test "complicated type 2" {
 
     const actual = try std.fmt.allocPrint(arena.allocator(), "{}", .{ty});
 
-    try std.testing.expectEqualStrings("((A, B), C) -> (A<[T, G]> -> ([A, B] -> (A<[T, (G, R)]> -> (B -> (C, D<[T]>)))))", actual);
+    try std.testing.expectEqualStrings("((A, B), C) -> (A<[T, G]> -> ([A, B] -> (A<[T, (G, R)]> -> (B -> (C, D<T>)))))", actual);
 }
 
 test "complicated type with ~>" {
@@ -859,7 +889,7 @@ test "complicated type with ~>" {
 
     const actual = try std.fmt.allocPrint(arena.allocator(), "{}", .{ty});
 
-    try std.testing.expectEqualStrings("((A, B), C) ~> (A<[T, G]> -> ([A, B] -> (A<[T, G ~> R]> -> (B -> (C, D<[T]>)))))", actual);
+    try std.testing.expectEqualStrings("((A, B), C) ~> (A<[T, G]> -> ([A, B] -> (A<[T, G ~> R]> -> (B -> (C, D<T>)))))", actual);
 }
 
 test "function in generic ~>" {
@@ -885,7 +915,7 @@ test "simple constraint" {
 
     const actual = try std.fmt.allocPrint(arena.allocator(), "{}", .{ty});
 
-    try std.testing.expectEqualStrings("A -> B<[T]> where T < ToString", actual);
+    try std.testing.expectEqualStrings("A -> B<T> where T < ToString", actual);
 }
 
 test "complicated constraint" {
@@ -898,7 +928,7 @@ test "complicated constraint" {
 
     const actual = try std.fmt.allocPrint(arena.allocator(), "{}", .{query});
 
-    try std.testing.expectEqualStrings("A -> B<[T]> where T < ToString & B, A < X<[T]> & Y", actual);
+    try std.testing.expectEqualStrings("A -> B<T> where T < ToString & B, A < X<T> & Y", actual);
 }
 
 test "complicated constraint 2" {
@@ -911,7 +941,7 @@ test "complicated constraint 2" {
 
     const actual = try std.fmt.allocPrint(arena.allocator(), "{}", .{query});
 
-    try std.testing.expectEqualStrings("A<[A -> [B, T]]> where A < A -> B & (A, T)", actual);
+    try std.testing.expectEqualStrings("A<A -> [B, T]> where A < A -> B & (A, T)", actual);
 }
 
 test "nominative with same name point to the same type" {
@@ -923,9 +953,9 @@ test "nominative with same name point to the same type" {
     const query: Query = try parser.parse();
 
     const t1 = query.ty.ty.function.from.ty;
-    const t2 = query.ty.ty.function.to.ty.nominative.generic.?.ty.list.list.items[0].ty;
+    const t2 = query.ty.ty.function.to.ty.nominative.generic.?.ty;
     const t3 = query.constraints.items[0].ty.ty;
-    const t4 = query.constraints.items[0].superTypes.items[0].ty.nominative.generic.?.ty.list.list.items[0].ty;
+    const t4 = query.constraints.items[0].superTypes.items[0].ty.nominative.generic.?.ty;
 
     try std.testing.expectEqual(t1, t2);
     try std.testing.expectEqual(t1, t3);

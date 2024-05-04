@@ -12,6 +12,7 @@ const Node = @import("node.zig").Node;
 const TypeNode = @import("typeNode.zig").TypeNode;
 const utils = @import("utils.zig");
 const typeNode = @import("typeNode.zig");
+const Following = @import("following.zig").Following;
 
 pub const Declaration = struct {
     name: []const u8,
@@ -96,7 +97,7 @@ pub const Tree = struct {
 
         const leaf = try self.sweetLeaf(decl_.ty, self.allocator);
 
-        const following = try leaf.getFollowing(try utils.getBacklink(decl_.ty), self.allocator);
+        const following = try leaf.getFollowing(try utils.getBacklink(decl_.ty), Following.Kind.arrow, self.allocator);
 
         // // TODO: this is a hack because some kind of miscompilation reuse same memory
         // // and all the declaration names are indistinguishable(last name are applied to all)
@@ -121,7 +122,7 @@ pub const Tree = struct {
         // const allocator = gpa.allocator();
 
         const leaf = try self.head.search(typec, self.allocator);
-        const following = try leaf.getFollowing(try utils.getBacklink(typec), self.allocator);
+        const following = try leaf.getFollowing(try utils.getBacklink(typec), Following.Kind.arrow, self.allocator);
 
         return following.to.endings;
     }

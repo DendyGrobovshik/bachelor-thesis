@@ -141,17 +141,18 @@ pub const TypeNode = struct {
         try child.parents.append(parent);
     }
 
-    pub fn getFollowing(self: *TypeNode, backlink: ?*TypeNode, allocator: Allocator) !*Following {
+    pub fn getFollowing(self: *TypeNode, backlink: ?*TypeNode, kind: Following.Kind, allocator: Allocator) !*Following {
         // here, in following can be only one backlink=null,
         // that presents newly introduced generic or concrete type
         for (self.followings.items) |following| {
-            if (following.backlink == backlink) {
+            if (following.backlink == backlink and following.kind == kind) {
                 return following;
             }
         }
 
         // if no candidate, then it should be added
         const following = try Following.init(allocator, self, backlink);
+        following.kind = kind;
         try self.followings.append(following);
 
         return following;
