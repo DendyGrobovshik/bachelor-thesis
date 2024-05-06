@@ -2,9 +2,9 @@ const std = @import("std");
 const Allocator = @import("std").mem.Allocator;
 
 const main = @import("../main.zig");
-const Node = @import("node.zig");
-const TypeNode = @import("typeNode.zig");
-const typeNode0 = @import("typeNode.zig");
+const Node = @import("Node.zig");
+const TypeNode = @import("TypeNode.zig");
+const typeNode0 = @import("TypeNode.zig");
 const utils = @import("utils.zig");
 
 pub fn byId(self: *Node) Allocator.Error![]const u8 {

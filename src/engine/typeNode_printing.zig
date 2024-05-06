@@ -1,4 +1,4 @@
-const TypeNode = @import("typeNode.zig");
+const TypeNode = @import("TypeNode.zig");
 
 const std = @import("std");
 const Allocator = @import("std").mem.Allocator;

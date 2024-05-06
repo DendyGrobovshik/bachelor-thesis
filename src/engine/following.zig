@@ -2,8 +2,8 @@ const std = @import("std");
 const Allocator = @import("std").mem.Allocator;
 
 const EngineError = @import("error.zig").EngineError;
-const Node = @import("node.zig");
-const TypeNode = @import("typeNode.zig");
+const Node = @import("Node.zig");
+const TypeNode = @import("TypeNode.zig");
 
 pub const Following = struct {
     pub const Kind = enum {

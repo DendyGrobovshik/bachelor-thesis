@@ -1,4 +1,4 @@
-const Node = @import("node.zig");
+const Node = @import("Node.zig");
 
 const std = @import("std");
 const Allocator = @import("std").mem.Allocator;
@@ -7,8 +7,8 @@ const SegmentedList = @import("std").SegmentedList;
 const LOG = @import("config").logp;
 
 const EngineError = @import("error.zig").EngineError;
-const TypeNode = @import("typeNode.zig");
-const typeNode0 = @import("typeNode.zig");
+const TypeNode = @import("TypeNode.zig");
+const typeNode0 = @import("TypeNode.zig");
 const Declaration = @import("tree.zig").Declaration;
 const utils = @import("utils.zig");
 const Function = @import("../query.zig").Function;
@@ -19,7 +19,7 @@ const Following = @import("following.zig").Following;
 const main = @import("../main.zig");
 
 // NOTE: all the decls become public
-pub usingnamespace @import("node_printing.zig");
+pub usingnamespace @import("Node_printing.zig");
 
 named: std.StringHashMap(*TypeNode),
 syntetics: std.ArrayList(*TypeNode),

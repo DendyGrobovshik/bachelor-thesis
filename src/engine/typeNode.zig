@@ -1,4 +1,4 @@
-const TypeNode = @import("typeNode.zig");
+const TypeNode = @import("TypeNode.zig");
 
 const std = @import("std");
 const Allocator = @import("std").mem.Allocator;
@@ -6,7 +6,7 @@ const SegmentedList = @import("std").SegmentedList;
 
 const EngineError = @import("error.zig").EngineError;
 const Declaration = @import("tree.zig").Declaration;
-const Node = @import("node.zig");
+const Node = @import("Node.zig");
 const Following = @import("following.zig").Following;
 const utils = @import("utils.zig");
 const String = @import("../utils.zig").String;
@@ -15,7 +15,7 @@ const main = @import("../main.zig");
 
 pub var PREROOT: TypeNode = undefined;
 
-pub usingnamespace @import("typeNode_printing.zig");
+pub usingnamespace @import("TypeNode_printing.zig");
 
 const KindE = enum {
     universal, // https://en.wikipedia.org/wiki/Top_type

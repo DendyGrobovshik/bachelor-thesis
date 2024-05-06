@@ -8,10 +8,10 @@ const LOG = @import("config").logt;
 const EngineError = @import("error.zig").EngineError;
 const query = @import("../query.zig");
 const TypeC = @import("../query.zig").TypeC;
-const Node = @import("node.zig");
-const TypeNode = @import("typeNode.zig");
+const Node = @import("Node.zig");
+const TypeNode = @import("TypeNode.zig");
 const utils = @import("utils.zig");
-const typeNode = @import("typeNode.zig");
+const typeNode = @import("TypeNode.zig");
 const Following = @import("following.zig").Following;
 
 pub const Declaration = struct {
