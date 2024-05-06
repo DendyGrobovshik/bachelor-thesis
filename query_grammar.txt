@@ -3,6 +3,7 @@ Query ::= Type Constraints
 Arrow ::= "->"
 Arrow ::= "~>"
 
+Type ::= "!" Type
 Type ::= NAME
 Type ::= NAME "<" NO_SPACE Type ">"
 Type ::= "(" Type ")"

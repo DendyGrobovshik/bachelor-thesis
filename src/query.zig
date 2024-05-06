@@ -210,6 +210,7 @@ pub const Type = union(Kind) {
 pub const TypeC = struct {
     ty: *Type,
     constraints: std.ArrayList(Constraint),
+    default: bool = false,
 
     pub fn init(allocator: Allocator, ty: *Type) !*TypeC {
         const constraints = std.ArrayList(Constraint).init(allocator);
@@ -520,6 +521,12 @@ pub fn Parser() type {
             }
             switch (nextToken) {
                 .char => {
+                    if (nextToken.char == '!') {
+                        var typec = try self.parseEndType();
+                        typec.default = true;
+                        return typec;
+                    }
+
                     if (nextToken.char != '(') {
                         return ParserError.UnexpectedChar;
                     }
@@ -683,6 +690,11 @@ pub fn Parser() type {
         inline fn next(self: *Self) Token {
             while (std.ascii.isWhitespace(self.cur())) {
                 self.pos += 1;
+            }
+
+            if (self.cur() == '!') {
+                self.pos += 1;
+                return .{ .char = '!' };
             }
 
             var end = self.pos;
@@ -960,4 +972,37 @@ test "nominative with same name point to the same type" {
     try std.testing.expectEqual(t1, t2);
     try std.testing.expectEqual(t1, t3);
     try std.testing.expectEqual(t1, t4);
+}
+
+test "type with default" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var parser = try Parser().init(arena.allocator(), "!ToString -> A");
+    defer parser.deinit();
+    const query: Query = try parser.parse();
+
+    const t1 = query.ty.ty.function.from;
+    const t2 = query.ty.ty.function.to;
+
+    try std.testing.expect(t1.default);
+    try std.testing.expect(!t2.default);
+}
+
+// TODO: check properly: `!ToString, !(A -> B) -> (A, !B) -> A`
+test "type with default 2" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var parser = try Parser().init(arena.allocator(), "!ToString, !(A -> B) -> A");
+    defer parser.deinit();
+    const query: Query = try parser.parse();
+
+    const t1 = query.ty.ty.function.from;
+    const t2 = t1.ty.list.list.items[0];
+    const t3 = t1.ty.list.list.items[1];
+
+    try std.testing.expect(!t1.default);
+    try std.testing.expect(t2.default);
+    try std.testing.expect(t3.default);
 }

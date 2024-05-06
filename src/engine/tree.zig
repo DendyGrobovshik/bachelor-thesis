@@ -11,8 +11,8 @@ const TypeC = @import("../query.zig").TypeC;
 const Node = @import("Node.zig");
 const TypeNode = @import("TypeNode.zig");
 const utils = @import("utils.zig");
-const typeNode = @import("TypeNode.zig");
 const Following = @import("following.zig").Following;
+const constants = @import("constants.zig");
 
 pub const Declaration = struct {
     name: []const u8,
@@ -42,7 +42,7 @@ pub const Tree = struct {
     allocator: Allocator,
 
     pub fn init(allocator: Allocator) !Tree {
-        const head = try Node.init(allocator, &typeNode.PREROOT);
+        const head = try Node.init(allocator, &constants.PREROOT);
 
         return .{
             .head = head,
