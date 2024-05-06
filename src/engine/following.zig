@@ -44,7 +44,7 @@ pub const Following = struct {
             .arrow => " -> ",
             .fake => "",
             .generic => " -> ",
-            .comma => " , ",
+            .comma => ", ",
         };
     }
 

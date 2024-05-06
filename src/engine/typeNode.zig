@@ -119,20 +119,53 @@ pub const TypeNode = struct {
 
         for (self.parents.items[0 .. self.parents.items.len - 1]) |parent| {
             if (isLabel) {
-                try result.appendSlice(try parent.of.labelName(main.gallocator));
-            } else {
-                try result.appendSlice(try parent.of.fullPathName());
-            }
-            if (isLabel) {
+                if (parent.of != self.of) {
+                    const res = try parent.partName(" -> ", main.gallocator);
+                    try result.appendSlice(res[0 .. res.len - 4]); // TODO: fix or remove arrow
+                } else {
+                    try result.appendSlice(try parent.labelName());
+                }
                 try result.appendSlice(" & ");
             } else {
+                try result.appendSlice(try parent.of.fullPathName());
                 try result.appendSlice("and");
             }
         }
 
-        try result.appendSlice(try self.parents.getLast().name());
+        // TODO: collapse with previous
+        const parent = self.parents.getLast();
+        if (isLabel) {
+            if (parent.of != self.of) {
+                const res = try parent.partName(" -> ", main.gallocator);
+                try result.appendSlice(res[0 .. res.len - 4]); // TODO: fix or remove arrow
+            } else {
+                try result.appendSlice(try parent.labelName());
+            }
+        } else {
+            try result.appendSlice(try parent.of.fullPathName());
+        }
 
         return result.items; // TODO: check allocator releasing
+    }
+
+    pub fn partName(self: *TypeNode, arrow: []const u8, allocator: Allocator) ![]const u8 {
+        if (self.isClosing()) { // current is closing
+            const prevTypeNode = self.of.by;
+            if (prevTypeNode.isGnominative()) { // and previous is gnominative
+                return try std.fmt.allocPrint(allocator, "{s}{s}<{s}>{s}", .{
+                    try utils.getOpenParenthesis(self).of.labelName(allocator), // type before this nominive with generic
+                    try prevTypeNode.labelName(), // gnominative
+                    try prevTypeNode.of.getTypeInAngles(allocator), // type paremeter
+                    arrow,
+                });
+            }
+        }
+
+        return try std.fmt.allocPrint(allocator, "{s}{s}{s}", .{
+            try self.of.labelName(allocator),
+            try self.labelName(),
+            arrow,
+        });
     }
 
     pub fn setAsParentTo(parent: *TypeNode, child: *TypeNode) std.mem.Allocator.Error!void {

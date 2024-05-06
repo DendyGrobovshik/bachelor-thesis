@@ -459,55 +459,34 @@ pub const Node = struct {
         }
 
         const following = utils.followingTo(self);
-        if (self.by.isClosing()) { // current is closing
-            const prevTypeNode = self.by.of.by;
-            if (prevTypeNode.isGnominative()) { // and previous is gnominative
-                return try std.fmt.allocPrint(allocator, "{s}{s}<{s}>{s}", .{
-                    try getOpenParenthesis(self.by).of.labelName(allocator), // type before this nominive with generic
-                    try prevTypeNode.labelName(), // gnominative
-                    try getTypeInAngles(prevTypeNode.of, allocator), // type paremeter
-                    following.arrow(),
-                });
+        const arrow = following.arrow();
+        return self.by.partName(arrow, allocator    );
+    }
+
+    pub fn getTypeInAngles(node: *Node, allocator: Allocator) ![]const u8 {
+        // it collect type until matching opening node
+        // TODO: here is cringe idea: suffix = prefixsuffix - prefix
+        const presuf = try node.labelName(allocator);
+        const open = utils.getOpenParenthesis(node.by);
+        const pre = try open.followings.getLast().to.labelName(allocator); //TODO: check if it's always one outcoming from open parenthesis
+        var suf: []const u8 = "";
+        // handling pre="(("" and presuf"(Array<U> ->"
+        for (0..pre.len) |start| {
+            const suffixOfPrefix = pre[0..(pre.len - start)];
+            const match = std.mem.eql(u8, suffixOfPrefix, presuf[0..(pre.len - start)]);
+
+            if (match) {
+                suf = presuf[(pre.len - start)..];
+                break;
             }
         }
 
-        return try std.fmt.allocPrint(allocator, "{s}{s}{s}", .{
-            try self.by.of.labelName(allocator),
-            try self.by.labelName(),
-            following.arrow(),
-        });
-    }
-
-    fn getTypeInAngles(node: *Node, allocator: Allocator) ![]const u8 {
-        if (node.by.isClosing()) {
-            // it collect type until matching opening node
-            // TODO: here is cringe idea: suffix = prefixsuffix - prefix
-            // return "TODO";
-            const presuf = try node.labelName(allocator);
-            const pre = try getOpenParenthesis(node.by).of.labelName(allocator);
-            const suf = presuf[pre.len..];
-
-            return utils.trimRightArrow(suf);
+        if (suf.len == 0) {
+            std.debug.print("Error: prefix='{s}', full='{s}', suffix='{s}'. Suffix shouldn't be empty.\n", .{ pre, presuf, suf });
+            unreachable;
         }
 
-        return node.by.labelName();
-    }
-
-    /// Takes typeNode of closing parenthesis
-    /// Returns mathcing open parenthesis
-    fn getOpenParenthesis(typeNode: *TypeNode) *TypeNode {
-        var currentNode = typeNode;
-
-        while (!currentNode.isOpening()) {
-            if (currentNode.of.by.isClosing()) {
-                const innerPairOpening = getOpenParenthesis(currentNode.of.by);
-                currentNode = innerPairOpening.of.by; // node before inner opening parenthesis
-            } else {
-                currentNode = currentNode.of.by;
-            }
-        }
-
-        return currentNode;
+        return utils.trimRightArrow(suf);
     }
 
     pub fn byId(self: *Node) Allocator.Error![]const u8 {

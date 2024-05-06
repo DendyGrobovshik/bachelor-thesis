@@ -118,7 +118,7 @@ pub fn followingTo(node: *Node) *Following {
 }
 
 pub fn trimRightArrow(str: []const u8) []const u8 {
-    if (str.len > 3 and std.mem.eql(u8, str[str.len - 4 ..], " -> ")) {
+    if (str.len >= 4 and std.mem.eql(u8, str[str.len - 4 ..], " -> ")) {
         return str[0 .. str.len - 4];
     }
 
@@ -227,4 +227,21 @@ pub fn getLastNonCompisiteType(ty: *TypeC) EngineError!*TypeC {
         },
         else => return ty.ty.list.list.getLast(),
     }
+}
+
+/// Takes typeNode of closing parenthesis
+/// Returns mathcing open parenthesis
+pub fn getOpenParenthesis(typeNode: *TypeNode) *TypeNode {
+    var currentNode = typeNode;
+
+    while (!currentNode.isOpening()) {
+        if (currentNode.of.by.isClosing()) {
+            const innerPairOpening = getOpenParenthesis(currentNode.of.by);
+            currentNode = innerPairOpening.of.by; // node before inner opening parenthesis
+        } else {
+            currentNode = currentNode.of.by;
+        }
+    }
+
+    return currentNode;
 }
