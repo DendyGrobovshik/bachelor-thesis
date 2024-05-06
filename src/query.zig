@@ -4,7 +4,7 @@ const RndGen = std.rand.DefaultPrng;
 
 const LOG = @import("config").logp;
 
-const TypeNode = @import("engine/typeNode.zig").TypeNode;
+const TypeNode = @import("engine/typeNode.zig");
 const utils = @import("utils.zig");
 const main = @import("main.zig");
 

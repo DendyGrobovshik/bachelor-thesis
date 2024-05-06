@@ -3,8 +3,8 @@ const Allocator = @import("std").mem.Allocator;
 
 const EngineError = @import("error.zig").EngineError;
 const Declaration = @import("tree.zig").Declaration;
-const Node = @import("node.zig").Node;
-const TypeNode = @import("typeNode.zig").TypeNode;
+const Node = @import("node.zig");
+const TypeNode = @import("typeNode.zig");
 const Type = @import("../query.zig").Type;
 const TypeC = @import("../query.zig").TypeC;
 const Following = @import("following.zig").Following;
