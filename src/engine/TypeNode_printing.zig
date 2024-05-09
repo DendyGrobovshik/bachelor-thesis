@@ -62,14 +62,16 @@ pub fn drawConnections(self: *TypeNode, file: std.fs.File, allocator: Allocator)
     }
 
     for (self.followings.items) |following| {
-        try file.writeAll(try std.fmt.allocPrint(allocator, "{s} -> {s}[lhead=cluster_{s},color=\"{s}\",style=filled];\n", .{
-            try self.fullPathName(),
-            try following.to.universal.fullPathName(),
-            try following.to.fullPathName(),
-            following.color(),
-        }));
+        if (!following.to.isEmpty()) {
+            try file.writeAll(try std.fmt.allocPrint(allocator, "{s} -> {s}[lhead=cluster_{s},color=\"{s}\",style=filled];\n", .{
+                try self.fullPathName(),
+                try following.to.universal.fullPathName(),
+                try following.to.fullPathName(),
+                following.color(),
+            }));
 
-        try following.to.draw(file, allocator);
+            try following.to.draw(file, allocator);
+        }
     }
 }
 

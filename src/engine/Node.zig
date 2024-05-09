@@ -395,6 +395,7 @@ pub fn searchFunction(self: *Node, next: *TypeC, allocator: Allocator) EngineErr
 
 pub fn searchList(self: *Node, next: *TypeC, allocator: Allocator) EngineError!*TypeNode {
     if (!next.ty.list.ordered) {
+        // Order agnostic lists like OOP function parameters should be ordered before
         return EngineError.NotYetSupported;
     }
 

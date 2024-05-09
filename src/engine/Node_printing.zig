@@ -64,7 +64,23 @@ pub fn labelName(self: *Node, allocator: Allocator) Allocator.Error![]const u8 {
     return self.by.partName(arrow, allocator);
 }
 
+// TODO: doublecheck!!!
+pub fn isEmpty(self: *Node) bool {
+    return self.endings.items.len == 0 and
+        self.named.count() == 0 and
+        (self.universal.followings.items.len == 0 and
+        self.universal.childs.items.len == 2 and // open and closing
+        self.opening.followings.items.len == 0 and
+        self.opening.childs.items.len == 0 and
+        self.closing.followings.items.len == 0 and
+        self.closing.childs.items.len == 0);
+}
+
 pub fn draw(self: *Node, file: std.fs.File, allocator: Allocator) anyerror!void {
+    if (self.isEmpty()) {
+        // return;
+    }
+
     const typeNodes = try self.notEmptyTypeNodes(allocator);
 
     try file.writeAll(try std.fmt.allocPrint(allocator, "subgraph cluster_{s}", .{try self.fullPathName()}));

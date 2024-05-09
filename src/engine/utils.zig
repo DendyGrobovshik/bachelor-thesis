@@ -245,3 +245,58 @@ pub fn getOpenParenthesis(typeNode: *TypeNode) *TypeNode {
 
     return currentNode;
 }
+
+/// if type is function and input parameter is order agnostic list then turn it into ordered
+/// do sort inplace
+/// order by lexicographic of string representation of types
+pub fn orderTypeParameters(ty: *TypeC) *TypeC {
+    // skip all other cases
+    switch (ty.ty.*) {
+        .function => {
+            switch (ty.ty.function.from.ty.*) {
+                .list => {
+                    const list = ty.ty.function.from.ty.list;
+                    if (list.ordered) {
+                        return ty;
+                    }
+                },
+                else => return ty,
+            }
+        },
+        else => return ty,
+    }
+
+    const list = ty.ty.function.from.ty.list;
+    std.debug.print("Ordering: {s}\n", .{list});
+
+    std.mem.sort(*TypeC, list.list.items, {}, typecComparator);
+    ty.ty.function.from.ty.list.ordered = true;
+    std.debug.print("Ordered: {s}\n", .{list});
+
+    return ty;
+}
+
+fn typecComparator(_: void, lhs: *TypeC, rhs: *TypeC) bool {
+    const allocator = main.gallocator; // TODO: !!!
+
+    const leftStr = std.fmt.allocPrint(allocator, "{s}", .{lhs}) catch unreachable;
+    const rightStr = std.fmt.allocPrint(allocator, "{s}", .{rhs}) catch unreachable;
+
+    return leftLess(leftStr, rightStr);
+}
+
+fn leftLess(left: []const u8, right: []const u8) bool {
+    const minLength = if (left.len < right.len) left.len else right.len;
+
+    for (0..minLength) |i| {
+        if (left[i] == right[i]) {
+            continue;
+        } else if (left[i] < right[i]) {
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    return left.len <= right.len;
+}

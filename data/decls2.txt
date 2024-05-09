@@ -14,3 +14,4 @@ gg : HashMap<Int, String> -> Int
 x : Array<Int>
 y : Array<Int>
 pair : (String, Int)
+get : Int, Array<T> -> T

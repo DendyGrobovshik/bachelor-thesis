@@ -95,14 +95,15 @@ pub const Tree = struct {
             std.debug.print("======ADDING DECLARATION... {s}\n", .{decl_.name});
         }
 
-        const leaf = try self.sweetLeaf(decl_.ty, self.allocator);
+        const ty = utils.orderTypeParameters(decl_.ty);
+        const leaf = try self.sweetLeaf(ty, self.allocator);
 
-        const following = try leaf.getFollowing(try utils.getBacklink(decl_.ty), Following.Kind.arrow, self.allocator);
+        const following = try leaf.getFollowing(try utils.getBacklink(ty), Following.Kind.arrow, self.allocator);
 
         // // TODO: this is a hack because some kind of miscompilation reuse same memory
         // // and all the declaration names are indistinguishable(last name are applied to all)
         const newName = try std.fmt.allocPrint(self.allocator, "{s}", .{decl_.name});
-        const decl = try Declaration.init(self.allocator, newName, decl_.ty);
+        const decl = try Declaration.init(self.allocator, newName, ty);
         try following.to.endings.append(decl);
 
         // try leaf.endings.append(.{ .type = decl.type, .name = newName });
