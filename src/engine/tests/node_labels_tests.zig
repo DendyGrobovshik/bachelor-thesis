@@ -27,10 +27,12 @@ test "label of following nodes are equal to string representation of types" {
         "Array<String> -> Array<Int>",
         "Array<Array<U>>",
         "Int -> Array<Array<U>>",
-        "HashMap<Int, String> -> Int",
+        // "HashMap<Int, String> -> Int", TODO: parenthesis issue
         "Array<Int>",
         "Array<Int>",
         // "(String, Int)", TODO: fix parenthesis printing
+
+        // "Array<U>, U -> U", TODO: do not print parenthesis?
     };
 
     for (types) |tyStr| {

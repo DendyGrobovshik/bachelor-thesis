@@ -399,44 +399,35 @@ pub fn searchList(self: *Node, next: *TypeC, allocator: Allocator) EngineError!*
         return EngineError.NotYetSupported;
     }
 
-    var current = self;
-    var typeNode: *TypeNode = undefined;
-    for (next.ty.list.list.items) |nextType| {
-        typeNode = try current.search(nextType, allocator);
-
-        current = (try typeNode.getFollowing(null, Following.Kind.comma, allocator)).to; // TODO: check backlink
-    }
-
-    return typeNode;
-}
-
-pub fn searchHOF(self: *Node, nextType: *TypeC, allocator: Allocator) EngineError!*TypeNode {
     const followingOfOpening = try self.opening.getFollowing(null, Following.Kind.fake, allocator);
     followingOfOpening.kind = Following.Kind.fake;
-    const fend = try followingOfOpening.to.search(nextType, allocator);
 
-    const followingToClosing = try fend.getFollowing(null, Following.Kind.fake, allocator);
+    var currentNode: *Node = followingOfOpening.to;
+    var prevTypeNode: *TypeNode = undefined;
+    for (next.ty.list.list.items) |nextType| {
+        prevTypeNode = try currentNode.search(nextType, allocator);
+
+        currentNode = (try prevTypeNode.getFollowing(null, Following.Kind.comma, allocator)).to; // TODO: check backlink
+    }
+
+    const followingToClosing = try prevTypeNode.getFollowing(null, Following.Kind.fake, allocator);
     followingToClosing.kind = Following.Kind.fake;
     const fclose = followingToClosing.to.closing;
 
     return fclose;
 }
 
-// pub fn searchPrimitive(self: *Node, what: TypeNode.Of, allocator: Allocator) EngineError!*TypeNode {
-//     if (self.named.get(what)) |typeNode| {
-//         return typeNode;
-//     }
+pub fn searchHOF(self: *Node, nextType: *TypeC, allocator: Allocator) EngineError!*TypeNode {
+    const followingOfOpening = try self.opening.getFollowing(null, Following.Kind.fake, allocator);
+    followingOfOpening.kind = Following.Kind.fake;
+    const fend: *TypeNode = try followingOfOpening.to.search(nextType, allocator);
 
-//     const newTypeNode = try TypeNode.init(allocator, what);
-//     const universal = self.universal;
+    const followingToClosing = try fend.getFollowing(null, Following.Kind.fake, allocator);
+    followingToClosing.kind = Following.Kind.fake;
+    const fclose: *TypeNode = followingToClosing.to.closing;
 
-//     try newTypeNode.parents.append(universal);
-//     try universal.childs.append(newTypeNode);
-
-//     try self.types.put(what, newTypeNode);
-
-//     return self.types.get(what) orelse unreachable;
-// }
+    return fclose;
+}
 
 pub fn extractAllDecls(self: *Node, allocator: Allocator) !std.ArrayList(*Declaration) {
     var result = std.ArrayList(*Declaration).init(allocator);

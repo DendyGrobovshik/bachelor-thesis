@@ -15,3 +15,5 @@ x : Array<Int>
 y : Array<Int>
 pair : (String, Int)
 get : Int, Array<T> -> T
+firstCommon: Array<T>, Array<T> -> T
+threeParam: Ab, Bc, Cd -> Ok

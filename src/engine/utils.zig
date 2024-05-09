@@ -249,7 +249,7 @@ pub fn getOpenParenthesis(typeNode: *TypeNode) *TypeNode {
 /// if type is function and input parameter is order agnostic list then turn it into ordered
 /// do sort inplace
 /// order by lexicographic of string representation of types
-pub fn orderTypeParameters(ty: *TypeC) *TypeC {
+pub fn orderTypeParameters(ty: *TypeC, allocator: Allocator) *TypeC {
     // skip all other cases
     switch (ty.ty.*) {
         .function => {
@@ -267,20 +267,20 @@ pub fn orderTypeParameters(ty: *TypeC) *TypeC {
     }
 
     const list = ty.ty.function.from.ty.list;
-    std.debug.print("Ordering: {s}\n", .{list});
+    // std.debug.print("Ordering: {s}\n", .{list});
 
-    std.mem.sort(*TypeC, list.list.items, {}, typecComparator);
+    std.mem.sort(*TypeC, list.list.items, allocator, typecComparator);
     ty.ty.function.from.ty.list.ordered = true;
-    std.debug.print("Ordered: {s}\n", .{list});
+    // std.debug.print("Ordered: {s}\n", .{list});
 
     return ty;
 }
 
-fn typecComparator(_: void, lhs: *TypeC, rhs: *TypeC) bool {
-    const allocator = main.gallocator; // TODO: !!!
-
+fn typecComparator(allocator: Allocator, lhs: *TypeC, rhs: *TypeC) bool {
     const leftStr = std.fmt.allocPrint(allocator, "{s}", .{lhs}) catch unreachable;
     const rightStr = std.fmt.allocPrint(allocator, "{s}", .{rhs}) catch unreachable;
+
+    // std.debug.print("COMPARING '{s}' and '{s}'\n", .{ lhs, rhs });
 
     return leftLess(leftStr, rightStr);
 }
@@ -298,5 +298,6 @@ fn leftLess(left: []const u8, right: []const u8) bool {
         }
     }
 
-    return left.len <= right.len;
+    // NOTE: `<=` is not valid here
+    return left.len < right.len;
 }

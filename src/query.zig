@@ -483,7 +483,17 @@ pub fn Parser() type {
                                 if (conts.ty.function.braced) {
                                     try types.append(conts);
                                 } else {
-                                    try types.append(conts.ty.function.from);
+                                    switch (conts.ty.function.from.ty.*) {
+                                        .list => {
+                                            if (conts.ty.function.from.ty.list.ordered) {
+                                                try types.append(conts.ty.function.from);
+                                            } else {
+                                                // TODO: free memory
+                                                try types.appendSlice(conts.ty.function.from.ty.list.list.items);
+                                            }
+                                        },
+                                        else => try types.append(conts.ty.function.from),
+                                    }
                                     ordered = false;
 
                                     const ty = try allocator.create(Type);
@@ -837,6 +847,19 @@ test "list inside a list" {
     const actual = try std.fmt.allocPrint(arena.allocator(), "{}", .{ty});
 
     try std.testing.expectEqualStrings("(A, (A, B))", actual);
+}
+
+test "long unordered list" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var parser = try Parser().init(arena.allocator(), "Ab, Bc, Cd -> Ok");
+    defer parser.deinit();
+    const query: Query = try parser.parse();
+
+    const actual = try std.fmt.allocPrint(arena.allocator(), "{}", .{query});
+
+    try std.testing.expectEqualStrings("[Ab, Bc, Cd] -> Ok", actual);
 }
 
 test "comma mixed with arrows" {

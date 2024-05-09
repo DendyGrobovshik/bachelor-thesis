@@ -95,7 +95,7 @@ pub const Tree = struct {
             std.debug.print("======ADDING DECLARATION... {s}\n", .{decl_.name});
         }
 
-        const ty = utils.orderTypeParameters(decl_.ty);
+        const ty = utils.orderTypeParameters(decl_.ty, self.allocator);
         const leaf = try self.sweetLeaf(ty, self.allocator);
 
         const following = try leaf.getFollowing(try utils.getBacklink(ty), Following.Kind.arrow, self.allocator);
@@ -113,7 +113,7 @@ pub const Tree = struct {
         }
     }
 
-    pub fn findDeclarations(self: *Tree, typec: *TypeC) EngineError!std.ArrayList(*Declaration) {
+    pub fn findDeclarations(self: *Tree, typec_: *TypeC) EngineError!std.ArrayList(*Declaration) {
         if (LOG) {
             std.debug.print("Searcing declaration...\n", .{});
         }
@@ -122,6 +122,7 @@ pub const Tree = struct {
         // var gpa = std.heap.GeneralPurposeAllocator(.{}){};
         // const allocator = gpa.allocator();
 
+        const typec = utils.orderTypeParameters(typec_, self.allocator);
         const leaf = try self.head.search(typec, self.allocator);
         const following = try leaf.getFollowing(try utils.getBacklink(typec), Following.Kind.arrow, self.allocator);
 

@@ -149,6 +149,29 @@ test "finding lists" {
     }
 }
 
+test "unorded lists lists" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const allocator = gpa.allocator();
+
+    const rawDecls = [_]RawDecl{
+        RawDecl{ .ty = "Int, Array<T> -> T", .name = "foo1" },
+        RawDecl{ .ty = "Array<T>, Array<T> -> T", .name = "foo2" },
+        RawDecl{ .ty = "Ab, Bc, Cd -> Ok", .name = "foo2" },
+        RawDecl{ .ty = "Ab, (Bc, Cd) -> Ok", .name = "foo2" },
+        RawDecl{ .ty = "Int, String, Array<(Int, String2)> -> Ok", .name = "foo3" },
+        RawDecl{ .ty = "(Ab, Bc), Cd, (De -> Eg), Gh<T> -> Ok", .name = "foo4" },
+    };
+    var searchIndex = try buildTree(&rawDecls, allocator);
+
+    for (rawDecls) |rawDecl| {
+        const query = try tree0.parseQ(allocator, rawDecl.ty);
+        const decls = try searchIndex.findDeclarations(query.ty);
+
+        try std.testing.expectEqual(decls.items.len, 1);
+        try std.testing.expectEqualStrings(decls.getLast().name, rawDecl.name);
+    }
+}
+
 test "the types that were added to the tree are found by the exact query" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
@@ -171,6 +194,8 @@ test "the types that were added to the tree are found by the exact query" {
         RawDecl{ .ty = "Int -> (Int, (String, Bool))", .name = "foo14" },
         RawDecl{ .ty = "HashMap<(Int, String), Bool>", .name = "foo15" },
         RawDecl{ .ty = "HashMap<(Int, Array<T>), HashMap<K, String>>", .name = "foo16" },
+        RawDecl{ .ty = "Int, Array<T> -> T", .name = "foo17" },
+        RawDecl{ .ty = "Array2<T>, Int -> T", .name = "foo18" },
     };
     var searchIndex = try buildTree(&rawDecls, allocator);
 
