@@ -13,6 +13,8 @@ const TypeNode = @import("TypeNode.zig");
 const utils = @import("utils.zig");
 const Following = @import("following.zig").Following;
 const constants = @import("constants.zig");
+const Cache = @import("cache.zig").Cache;
+const cache = @import("cache.zig");
 
 pub const Declaration = struct {
     name: []const u8,
@@ -30,18 +32,13 @@ pub const Declaration = struct {
     }
 };
 
-// pub const EngineError = error{
-//     CanNotInsert,
-//     CanNotFindNode,
-//     NotYetSupported,
-// } || std.mem.Allocator.Error || Node.NodeError;
-
 // TODO: allocator optimization(everywhere)
 pub const Tree = struct {
     head: *Node,
     allocator: Allocator,
 
     pub fn init(allocator: Allocator) !Tree {
+        cache.cache = try Cache.init();
         const head = try Node.init(allocator, &constants.PREROOT);
 
         return .{

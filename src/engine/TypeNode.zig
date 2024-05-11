@@ -167,31 +167,3 @@ pub fn extractAllDecls(self: *TypeNode, allocator: Allocator) Allocator.Error!st
 
     return result;
 }
-
-// TODO: move out, design driver for target language
-pub fn greater(self: *TypeNode, what: *TypeNode) !bool {
-    if (self.isUniversal()) {
-        return true;
-    }
-
-    if (std.mem.eql(u8, try self.name(), try what.name())) {
-        return true;
-    }
-
-    const Pair = struct { []const u8, []const u8 };
-
-    const pairs = [_]Pair{
-        .{ "Collection", "String" },
-        .{ "Int", "IntEven" },
-        .{ "Printable", "IntEven" },
-        .{ "Printable", "Collection" },
-    };
-
-    for (pairs) |pair| {
-        if (std.mem.eql(u8, try self.name(), pair[0]) and std.mem.eql(u8, try what.name(), pair[1])) {
-            return true;
-        }
-    }
-
-    return false;
-}

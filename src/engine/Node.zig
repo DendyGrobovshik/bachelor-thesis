@@ -16,6 +16,8 @@ const TypeC = @import("../query.zig").TypeC;
 const Constraint = @import("../query.zig").Constraint;
 const Following = @import("following.zig").Following;
 const main = @import("../main.zig");
+const tree = @import("tree.zig");
+const cache = @import("cache.zig");
 
 // NOTE: all the decls become public
 pub usingnamespace @import("Node_printing.zig");
@@ -296,7 +298,7 @@ pub fn solveNominativePosition(current: *TypeNode, new: *TypeNode) EngineError!v
     var pushedBelow = false;
 
     for (current.childs.items) |sub| {
-        if (try sub.greater(new)) {
+        if (try cache.greater(sub, new)) {
             pushedBelow = true;
             _ = try solveNominativePosition(sub, new);
         }
@@ -308,8 +310,7 @@ pub fn solveNominativePosition(current: *TypeNode, new: *TypeNode) EngineError!v
         if (sub.isSyntetic()) {
             pushedBelow = true;
             for (sub.parents.items) |subParent| {
-                // std.debug.print("syn top: {s} {}\n", .{ subParent.of, subParent.greater(new) });
-                if (!(try subParent.greater(new))) {
+                if (!(try cache.greater(subParent, new))) {
                     pushedBelow = false;
                 }
             }
