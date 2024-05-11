@@ -6,8 +6,8 @@ comptime {
         @import("tests/utils_test.zig"),
         @import("query.zig"),
         @import("engine/tree.zig"),
-        @import("engine/node.zig"),
-        @import("engine/typeNode.zig"),
+        @import("engine/Node.zig"),
+        @import("engine/TypeNode.zig"),
         @import("engine/tests/exact_search_tests.zig"),
         @import("engine/tests/node_labels_tests.zig"),
     };

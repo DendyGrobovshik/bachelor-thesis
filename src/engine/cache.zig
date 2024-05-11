@@ -16,21 +16,21 @@ pub const Cache = struct {
 
     head: *Node,
     // arena: std.heap.ArenaAllocator,
-    // allocator: Allocator,
+    allocator: Allocator,
     childsOf: std.StringHashMap(std.ArrayList(Child)),
 
-    pub fn init() !Cache {
+    pub fn init(allocator: Allocator) !Cache {
         // var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
         // const allocator = arena.allocator();
 
-        const head = try Node.init(main.gallocator, &constants.PREROOT);
+        const head = try Node.init(allocator, &constants.PREROOT);
 
-        const childsOf = std.StringHashMap(std.ArrayList(Child)).init(main.gallocator);
+        const childsOf = std.StringHashMap(std.ArrayList(Child)).init(allocator);
 
         return .{
             .head = head,
             // .arena = arena,
-            // .allocator = allocator,
+            .allocator = allocator,
             .childsOf = childsOf,
         };
     }
@@ -91,7 +91,7 @@ pub fn greater(parent: *TypeNode, child: *TypeNode) !bool {
         // });
         return isParent;
     } else {
-        var childs = std.ArrayList(Cache.Child).init(main.gallocator);
+        var childs = std.ArrayList(Cache.Child).init(cache.allocator);
         const isParent = try Cache.calculate(parent, child);
         try childs.append(.{ .name = childName, .is = isParent });
 

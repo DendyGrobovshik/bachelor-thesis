@@ -38,7 +38,7 @@ pub const Tree = struct {
     allocator: Allocator,
 
     pub fn init(allocator: Allocator) !Tree {
-        cache.cache = try Cache.init();
+        cache.cache = try Cache.init(allocator);
         const head = try Node.init(allocator, &constants.PREROOT);
 
         return .{
@@ -123,7 +123,20 @@ pub const Tree = struct {
         const leaf = try self.head.search(typec, self.allocator);
         const following = try leaf.getFollowing(try utils.getBacklink(typec), Following.Kind.arrow, self.allocator);
 
-        return following.to.endings;
+        var result = std.ArrayList(*Declaration).init(self.allocator);
+        try result.appendSlice(following.to.endings.items);
+
+        if (utils.canBeDecurried(typec)) { // TODO: add check "if here is available vacancies"
+            const decurried = try utils.decurryType(self.allocator, typec);
+            const ordered = utils.orderTypeParameters(decurried, self.allocator);
+
+            const leaf2 = try self.head.search(ordered, self.allocator);
+            const following2 = try leaf2.getFollowing(try utils.getBacklink(ordered), Following.Kind.arrow, self.allocator);
+
+            try result.appendSlice(following2.to.endings.items);
+        }
+
+        return result;
     }
 
     pub fn extractAllDecls(self: *Tree, allocator: Allocator) !std.ArrayList(*Declaration) {

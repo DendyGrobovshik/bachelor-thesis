@@ -6,6 +6,8 @@ const Declaration = @import("tree.zig").Declaration;
 const Node = @import("Node.zig");
 const TypeNode = @import("TypeNode.zig");
 const Type = @import("../query.zig").Type;
+const List = @import("../query.zig").List;
+const Constraint = @import("../query.zig").Constraint;
 const TypeC = @import("../query.zig").TypeC;
 const Following = @import("following.zig").Following;
 const main = @import("../main.zig");
@@ -249,6 +251,7 @@ pub fn getOpenParenthesis(typeNode: *TypeNode) *TypeNode {
 /// if type is function and input parameter is order agnostic list then turn it into ordered
 /// do sort inplace
 /// order by lexicographic of string representation of types
+// TODO: it's actually "order if needed"
 pub fn orderTypeParameters(ty: *TypeC, allocator: Allocator) *TypeC {
     // skip all other cases
     switch (ty.ty.*) {
@@ -300,4 +303,54 @@ fn leftLess(left: []const u8, right: []const u8) bool {
 
     // NOTE: `<=` is not valid here
     return left.len < right.len;
+}
+
+pub fn canBeDecurried(typec: *TypeC) bool {
+    switch (typec.ty.*) {
+        .function => {
+            switch (typec.ty.function.to.ty.*) {
+                .function => return true,
+                else => return false,
+            }
+        },
+        else => return false,
+    }
+}
+
+pub fn decurryType(allocator: Allocator, typec_: *TypeC) !*TypeC {
+    var parameters = std.ArrayList(*TypeC).init(allocator);
+
+    var from = typec_.ty.function.from;
+    var to = typec_.ty.function.to;
+
+    stop: while (true) {
+        try parameters.append(from);
+
+        switch (to.ty.*) {
+            .function => {
+                from = to.ty.function.from;
+                to = to.ty.function.to;
+            },
+            else => break :stop,
+        }
+    }
+
+    const parametersListTy = try List.init(allocator, parameters);
+    const resFunc = .{
+        .from = parametersListTy,
+        .to = to,
+    };
+
+    const ty = try allocator.create(Type);
+    ty.* = .{
+        .function = resFunc,
+    };
+
+    const typec = try allocator.create(TypeC);
+    typec.* = .{
+        .ty = ty,
+        .constraints = std.ArrayList(Constraint).init(allocator),
+    };
+
+    return typec;
 }

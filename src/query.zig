@@ -96,11 +96,11 @@ const Nominative = struct {
     }
 };
 
-const List = struct {
+pub const List = struct {
     list: std.ArrayList(*TypeC),
     ordered: bool = false,
 
-    pub fn init(allocator: Allocator, types: std.ArrayList(*TypeC)) *TypeC {
+    pub fn init(allocator: Allocator, types: std.ArrayList(*TypeC)) !*TypeC {
         const typec = try allocator.create(TypeC);
         const ty = try allocator.create(Type);
 

@@ -207,3 +207,34 @@ test "the types that were added to the tree are found by the exact query" {
         try std.testing.expectEqualStrings(rawDecl.name, decls.items[0].name);
     }
 }
+
+test "function with unordered parameters is found where query is ordered" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const allocator = gpa.allocator();
+
+    const rawDecls = [_]RawDecl{
+        RawDecl{ .ty = "Int, String -> Bool", .name = "foo1" },
+        RawDecl{ .ty = "String, Int -> Bool", .name = "foo2" },
+        RawDecl{ .ty = "String -> Int -> Bool", .name = "boo" },
+    };
+    var searchIndex = try buildTree(&rawDecls, allocator);
+
+    const query = try tree0.parseQ(allocator, "String -> Int -> Bool");
+    const decls = try searchIndex.findDeclarations(query.ty);
+
+    try std.testing.expectEqual(3, decls.items.len);
+
+    for (rawDecls) |rawDecl| {
+        var found = false;
+
+        for (decls.items) |foundDecl| {
+            if (std.mem.eql(u8, foundDecl.name, rawDecl.name)) {
+                found = true;
+            }
+        }
+
+        if (!found) {
+            try std.testing.expectEqualStrings("The declararation was not found!!!", rawDecl.name);
+        }
+    }
+}
