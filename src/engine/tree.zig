@@ -32,6 +32,60 @@ pub const Declaration = struct {
     }
 };
 
+pub const Variance = enum {
+    invariant,
+    covariant,
+    contravariant,
+    bivariant,
+
+    pub fn format(
+        this: Variance,
+        comptime _: []const u8,
+        _: std.fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
+        try switch (this) {
+            .invariant => writer.print("invariant", .{}),
+            .covariant => writer.print("covariant", .{}),
+            .contravariant => writer.print("contravariant", .{}),
+            .bivariant => writer.print("bivariant", .{}),
+        };
+    }
+
+    fn inverse(self: Variance) Variance {
+        return switch (self) {
+            .invariant => Variance.invariant,
+            .covariant => Variance.contravariant,
+            .contravariant => Variance.covariant,
+            .bivariant => Variance.bivariant,
+        };
+    }
+
+    // commutative, associative
+    pub fn x(self: Variance, other: Variance) Variance {
+        return switch (self) {
+            .invariant => Variance.invariant,
+            .covariant => other,
+            .contravariant => other.inverse(),
+            .bivariant => other, // TODO: check
+        };
+    }
+};
+
+pub const VarianceConfig = struct {
+    functionIn: Variance,
+    functionOut: Variance,
+    nominativeGeneric: Variance,
+    tupleVariance: Variance,
+};
+
+pub const defaultVariances = .{
+    .functionIn = Variance.contravariant,
+    .functionOut = Variance.covariant,
+    .nominativeGeneric = Variance.invariant,
+    .tupleVariance = Variance.covariant,
+};
+
 // TODO: allocator optimization(everywhere)
 pub const Tree = struct {
     head: *Node,
@@ -111,6 +165,10 @@ pub const Tree = struct {
     }
 
     pub fn findDeclarations(self: *Tree, typec_: *TypeC) EngineError!std.ArrayList(*Declaration) {
+        return self.findDeclarationsWithVariants(typec_, Variance.invariant);
+    }
+
+    pub fn findDeclarationsWithVariants(self: *Tree, typec_: *TypeC, variance: Variance) EngineError!std.ArrayList(*Declaration) {
         if (LOG) {
             std.debug.print("Searcing declaration...\n", .{});
         }
@@ -118,22 +176,26 @@ pub const Tree = struct {
         // // NOTE: for some reasom self.allocator is not enough and `recursiveTypeProcessor` fails
         // var gpa = std.heap.GeneralPurposeAllocator(.{}){};
         // const allocator = gpa.allocator();
+        var result = std.ArrayList(*Declaration).init(self.allocator);
 
         const typec = utils.orderTypeParameters(typec_, self.allocator);
-        const leaf = try self.head.search(typec, self.allocator);
-        const following = try leaf.getFollowing(try utils.getBacklink(typec), Following.Kind.arrow, self.allocator);
+        const leafs = try self.head.searchWithVariance(typec, variance, self.allocator);
+        for (leafs.items) |leaf| {
+            const following = try leaf.getFollowing(try utils.getBacklink(typec), Following.Kind.arrow, self.allocator);
 
-        var result = std.ArrayList(*Declaration).init(self.allocator);
-        try result.appendSlice(following.to.endings.items);
+            try result.appendSlice(following.to.endings.items);
+        }
 
         if (utils.canBeDecurried(typec)) { // TODO: add check "if here is available vacancies"
             const decurried = try utils.decurryType(self.allocator, typec);
             const ordered = utils.orderTypeParameters(decurried, self.allocator);
 
-            const leaf2 = try self.head.search(ordered, self.allocator);
-            const following2 = try leaf2.getFollowing(try utils.getBacklink(ordered), Following.Kind.arrow, self.allocator);
+            const leafs2 = try self.head.searchWithVariance(ordered, variance, self.allocator);
+            for (leafs2.items) |leaf2| {
+                const following2 = try leaf2.getFollowing(try utils.getBacklink(ordered), Following.Kind.arrow, self.allocator);
 
-            try result.appendSlice(following2.to.endings.items);
+                try result.appendSlice(following2.to.endings.items);
+            }
         }
 
         return result;

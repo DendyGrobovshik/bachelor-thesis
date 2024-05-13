@@ -2,6 +2,7 @@ const std = @import("std");
 const Allocator = @import("std").mem.Allocator;
 
 const tree0 = @import("../tree.zig");
+const Declaration = @import("../tree.zig").Declaration;
 
 pub const RawDecl = struct {
     ty: []const u8,
@@ -24,4 +25,14 @@ pub fn buildTree(rawDecls: []const RawDecl, allocator: Allocator) !tree0.Tree {
     }
 
     return tree;
+}
+
+pub fn inArrayOfDecls(name: []const u8, decls: std.ArrayList(*Declaration)) bool {
+    var in = false;
+    for (decls.items) |decl| {
+        if (std.mem.eql(u8, decl.name, name)) {
+            in = true;
+        }
+    }
+    return in;
 }

@@ -12,6 +12,7 @@ const utils = @import("utils.zig");
 const String = @import("../utils.zig").String;
 const TypeC = @import("../query.zig").TypeC;
 const main = @import("../main.zig");
+const Variance = @import("tree.zig").Variance;
 
 pub usingnamespace @import("TypeNode_printing.zig");
 
@@ -163,6 +164,76 @@ pub fn extractAllDecls(self: *TypeNode, allocator: Allocator) Allocator.Error!st
 
     for (self.followings.items) |following| {
         try result.appendSlice((try following.to.extractAllDecls(allocator)).items);
+    }
+
+    return result;
+}
+
+// NOTE: top level variance is covariant
+pub fn getAllByVariance(self: *TypeNode, variance: Variance, allocator: Allocator) EngineError!std.ArrayList(*TypeNode) {
+    var typeNodes = std.AutoHashMap(*TypeNode, void).init(allocator);
+    // try typeNodes.put(self, {});
+
+    // TODO: учесть ограничения
+    // TODO: proof that no recusrion occurs!!!
+    switch (variance) {
+        .invariant => {
+            try typeNodes.put(self, {});
+        },
+        .covariant => {
+            for ((try self.getChildsRecursively(allocator)).items) |tn| {
+                try typeNodes.put(tn, {});
+            }
+        },
+        .contravariant => {
+            for ((try self.getParentsRecursively(allocator)).items) |tn| {
+                try typeNodes.put(tn, {});
+            }
+        },
+        .bivariant => {
+            for ((try self.getChildsRecursively(allocator)).items) |tn| {
+                try typeNodes.put(tn, {});
+            }
+            for ((try self.getParentsRecursively(allocator)).items) |tn| {
+                try typeNodes.put(tn, {});
+            }
+        },
+    }
+
+    var result = std.ArrayList(*TypeNode).init(allocator);
+    // try result.append(self);
+
+    var it = typeNodes.keyIterator();
+    while (it.next()) |typeNode| {
+        try result.append(typeNode.*);
+    }
+    // TODO: free typNodes
+
+    return result;
+}
+
+pub fn getChildsRecursively(self: *TypeNode, allocator: Allocator) Allocator.Error!std.ArrayList(*TypeNode) {
+    var result = std.ArrayList(*TypeNode).init(allocator);
+    try result.append(self);
+
+    for (self.childs.items) |child| {
+        const childs = try getChildsRecursively(child, allocator);
+        try result.appendSlice(childs.items);
+        // TODO: free
+    }
+
+    return result;
+}
+
+// TODO: extract copypaste
+pub fn getParentsRecursively(self: *TypeNode, allocator: Allocator) Allocator.Error!std.ArrayList(*TypeNode) {
+    var result = std.ArrayList(*TypeNode).init(allocator);
+    try result.append(self);
+
+    for (self.parents.items) |parent| {
+        const childs = try getParentsRecursively(parent, allocator);
+        try result.appendSlice(childs.items);
+        // TODO: free
     }
 
     return result;

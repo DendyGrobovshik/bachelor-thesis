@@ -86,8 +86,12 @@ pub fn draw(self: *Node, file: std.fs.File, allocator: Allocator) anyerror!void 
     try file.writeAll(try std.fmt.allocPrint(allocator, "subgraph cluster_{s}", .{try self.fullPathName()}));
     try file.writeAll("{\n");
     try file.writeAll("style=\"rounded\"\n");
+    var label = try self.labelName(allocator);
+    if (label.len == 0) {
+        label = "ROOT";
+    }
     try file.writeAll(try std.fmt.allocPrint(allocator, "label = \"{s}\";\n", .{
-        utils.trimRightArrow(try self.labelName(allocator)),
+        utils.trimRightArrow(label),
     }));
 
     for (self.endings.items) |decl| {

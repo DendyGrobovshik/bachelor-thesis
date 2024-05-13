@@ -17,6 +17,8 @@ const Constraint = @import("../query.zig").Constraint;
 const Following = @import("following.zig").Following;
 const main = @import("../main.zig");
 const tree = @import("tree.zig");
+const defaultVariances = @import("tree.zig").defaultVariances;
+const Variance = @import("tree.zig").Variance;
 const cache = @import("cache.zig");
 
 // NOTE: all the decls become public
@@ -59,30 +61,39 @@ pub fn init(allocator: Allocator, by: *TypeNode) EngineError!*Node {
     return self;
 }
 
-// do exact search or insert if no present
 pub fn search(self: *Node, next: *TypeC, allocator: Allocator) EngineError!*TypeNode {
-    switch (next.ty.*) {
-        .nominative => return try self.searchNominative(next, allocator),
-        .function => return try self.searchFunction(next, allocator),
-        .list => return try self.searchList(next, allocator),
-    }
+    const result = try self.searchWithVariance(next, Variance.invariant, allocator);
+    // TODO: assert result.size == 1
+    // TODO: free
+
+    return result.getLast();
 }
 
-pub fn searchNominative(self: *Node, next: *TypeC, allocator: Allocator) EngineError!*TypeNode {
+// do exact search or insert if no present
+pub fn searchWithVariance(self: *Node, next: *TypeC, variance: Variance, allocator: Allocator) EngineError!std.ArrayList(*TypeNode) {
+    return switch (next.ty.*) {
+        .nominative => try self.searchNominative(next, variance, allocator),
+        .function => try self.searchFunction(next, variance, allocator),
+        .list => try self.searchList(next, variance, allocator),
+    };
+}
+
+pub fn searchNominative(self: *Node, next: *TypeC, variance: Variance, allocator: Allocator) EngineError!std.ArrayList(*TypeNode) {
     if (next.ty.nominative.generic) |_| {
-        return try self.searchNominativeWithGeneric(next, allocator);
+        return self.searchNominativeWithGeneric(next, variance, allocator);
     }
 
-    if (!next.ty.nominative.isGeneric()) {
-        return self.searchRealNominative(next, allocator);
+    if (next.ty.nominative.isGeneric()) {
+        const nextVariance = variance.x(defaultVariances.nominativeGeneric);
+        return self.searchGeneric(next, nextVariance, allocator);
     } else {
-        return self.searchGeneric(next, allocator);
+        return self.searchRealNominative(next, variance, allocator);
     }
 }
 
-pub fn searchRealNominative(self: *Node, next: *TypeC, allocator: Allocator) EngineError!*TypeNode {
+pub fn searchRealNominative(self: *Node, next: *TypeC, variance: Variance, allocator: Allocator) EngineError!std.ArrayList(*TypeNode) {
     if (self.named.get(next.ty.nominative.name)) |alreadyInserted| {
-        return alreadyInserted;
+        return alreadyInserted.getAllByVariance(variance, allocator);
     }
     const name = try utils.simplifyName(next.ty.nominative.name, allocator);
     var newTypeNode: *TypeNode = undefined;
@@ -96,10 +107,10 @@ pub fn searchRealNominative(self: *Node, next: *TypeC, allocator: Allocator) Eng
 
     try solveNominativePosition(self.universal, newTypeNode);
 
-    return newTypeNode;
+    return newTypeNode.getAllByVariance(variance, allocator);
 }
 
-pub fn searchGeneric(self: *Node, next: *TypeC, allocator: Allocator) EngineError!*TypeNode {
+pub fn searchGeneric(self: *Node, next: *TypeC, variance: Variance, allocator: Allocator) EngineError!std.ArrayList(*TypeNode) {
     var parents = std.ArrayList(*TypeNode).init(allocator);
 
     // generic are only constraint defined, and it requires another inserting algorithm
@@ -109,8 +120,8 @@ pub fn searchGeneric(self: *Node, next: *TypeC, allocator: Allocator) EngineErro
         }
 
         for (constraint.superTypes.items) |superType| {
-            const constraintTypeNode = try self.search(superType, allocator);
-            try parents.append(constraintTypeNode);
+            const constraintTypeNode = try self.searchWithVariance(superType, Variance.invariant, allocator);
+            try parents.append(constraintTypeNode.items[0]);
         }
     }
 
@@ -129,7 +140,7 @@ pub fn searchGeneric(self: *Node, next: *TypeC, allocator: Allocator) EngineErro
         next.ty.nominative.typeNode = result;
     }
 
-    return result;
+    return result.getAllByVariance(variance, allocator);
 }
 
 // Находит позицию джененрика в графе подстановки
@@ -328,7 +339,7 @@ pub fn solveNominativePosition(current: *TypeNode, new: *TypeNode) EngineError!v
     // return new;
 }
 
-pub fn searchNominativeWithGeneric(self: *Node, next: *TypeC, allocator: Allocator) EngineError!*TypeNode {
+pub fn searchNominativeWithGeneric(self: *Node, next: *TypeC, variance: Variance, allocator: Allocator) EngineError!std.ArrayList(*TypeNode) {
     if (LOG) {
         std.debug.print("Searching nominative with generic \n", .{});
     }
@@ -357,26 +368,28 @@ pub fn searchNominativeWithGeneric(self: *Node, next: *TypeC, allocator: Allocat
     const typec = try TypeC.init(allocator, ty);
 
     // TODO: handle constrains `A<T> < C`
-    const result = try self.searchHOF(typec, allocator);
+    const typeNodes = try self.searchHOF(typec, variance, allocator);
 
-    const middle = result.genericFollowing();
+    const middle = typeNodes.items[0].genericFollowing(); // first should always be exact
     middle.kind = Following.Kind.generic;
 
-    return result;
+    return typeNodes;
 }
 
-pub fn searchFunction(self: *Node, next: *TypeC, allocator: Allocator) EngineError!*TypeNode {
+pub fn searchFunction(self: *Node, next: *TypeC, variance: Variance, allocator: Allocator) EngineError!std.ArrayList(*TypeNode) {
     if (LOG) {
         std.debug.print("Searching function {s}\n", .{next.ty});
     }
     const from = next.ty.function.from;
     const to = next.ty.function.to;
 
-    var continuation: *TypeNode = undefined;
+    const finv = variance.x(defaultVariances.functionIn);
+
+    var continuations: std.ArrayList(*TypeNode) = undefined;
     switch (from.ty.*) {
-        .nominative => continuation = try self.searchNominative(from, allocator),
-        .function => continuation = try self.searchHOF(from, allocator),
-        .list => continuation = try self.searchList(from, allocator),
+        .nominative => continuations = try self.searchNominative(from, finv, allocator),
+        .function => continuations = try self.searchHOF(from, finv, allocator),
+        .list => continuations = try self.searchList(from, finv, allocator),
     }
 
     // TODO: it's not true that it always nominative
@@ -390,11 +403,23 @@ pub fn searchFunction(self: *Node, next: *TypeC, allocator: Allocator) EngineErr
         else => {},
     }
 
-    const following = try continuation.getFollowing(null, followingKind, allocator);
-    return try (following).to.search(to, allocator); // TODO: check null in following
+    const foutv = variance.x(defaultVariances.functionOut);
+
+    var result = std.ArrayList(*TypeNode).init(allocator);
+    for (continuations.items) |continuation| {
+        const following = try continuation.getFollowing(null, followingKind, allocator);
+        const tns = try (following).to.searchWithVariance(to, foutv, allocator); // TODO: check null in following
+
+        // TODO: check
+        for (tns.items) |tn| {
+            try result.append(tn);
+        }
+    }
+
+    return result;
 }
 
-pub fn searchList(self: *Node, next: *TypeC, allocator: Allocator) EngineError!*TypeNode {
+pub fn searchList(self: *Node, next: *TypeC, variance: Variance, allocator: Allocator) EngineError!std.ArrayList(*TypeNode) {
     if (!next.ty.list.ordered) {
         // Order agnostic lists like OOP function parameters should be ordered before
         return EngineError.NotYetSupported;
@@ -403,31 +428,57 @@ pub fn searchList(self: *Node, next: *TypeC, allocator: Allocator) EngineError!*
     const followingOfOpening = try self.opening.getFollowing(null, Following.Kind.fake, allocator);
     followingOfOpening.kind = Following.Kind.fake;
 
-    var currentNode: *Node = followingOfOpening.to;
-    var prevTypeNode: *TypeNode = undefined;
-    for (next.ty.list.list.items) |nextType| {
-        prevTypeNode = try currentNode.search(nextType, allocator);
+    const listVariance = variance.x(defaultVariances.tupleVariance);
 
-        currentNode = (try prevTypeNode.getFollowing(null, Following.Kind.comma, allocator)).to; // TODO: check backlink
+    var currentNodes: std.ArrayList(*Node) = std.ArrayList(*Node).init(allocator);
+    try currentNodes.append(followingOfOpening.to);
+    var prevTypeNodes: std.ArrayList(*TypeNode) = undefined;
+    for (next.ty.list.list.items) |nextType| {
+        prevTypeNodes = std.ArrayList(*TypeNode).init(allocator);
+        for (currentNodes.items) |currentNode| {
+            const nexts = (try currentNode.searchWithVariance(nextType, listVariance, allocator));
+
+            // TODO: free
+            try prevTypeNodes.appendSlice(nexts.items);
+        }
+
+        // TODO: free!!!
+        currentNodes = std.ArrayList(*Node).init(allocator);
+        for (prevTypeNodes.items) |prevTypeNode| {
+            // По идее тут могут встретиться ноды по которым дальше никак нельзя будет походить,
+            // поэтому нужно добавить фильтр TODO:
+            // Это к вопросу о том что не нужно добавлять в дерево вершины, которые заведомо никуда не ведут!!!
+            const node = (try prevTypeNode.getFollowing(null, Following.Kind.comma, allocator)).to; // TODO: check backlink
+            try currentNodes.append(node);
+        }
     }
 
-    const followingToClosing = try prevTypeNode.getFollowing(null, Following.Kind.fake, allocator);
-    followingToClosing.kind = Following.Kind.fake;
-    const fclose = followingToClosing.to.closing;
+    var result = std.ArrayList(*TypeNode).init(allocator);
+    for (prevTypeNodes.items) |prevTypeNode| {
+        const followingToClosing = try prevTypeNode.getFollowing(null, Following.Kind.fake, allocator);
+        followingToClosing.kind = Following.Kind.fake;
+        const fclose = followingToClosing.to.closing;
+        try result.append(fclose);
+    }
 
-    return fclose;
+    return result;
 }
 
-pub fn searchHOF(self: *Node, nextType: *TypeC, allocator: Allocator) EngineError!*TypeNode {
+pub fn searchHOF(self: *Node, nextType: *TypeC, variance: Variance, allocator: Allocator) EngineError!std.ArrayList(*TypeNode) {
     const followingOfOpening = try self.opening.getFollowing(null, Following.Kind.fake, allocator);
     followingOfOpening.kind = Following.Kind.fake;
-    const fend: *TypeNode = try followingOfOpening.to.search(nextType, allocator);
+    const fends: std.ArrayList(*TypeNode) = try followingOfOpening.to.searchWithVariance(nextType, variance, allocator);
 
-    const followingToClosing = try fend.getFollowing(null, Following.Kind.fake, allocator);
-    followingToClosing.kind = Following.Kind.fake;
-    const fclose: *TypeNode = followingToClosing.to.closing;
+    var result = std.ArrayList(*TypeNode).init(allocator);
+    for (fends.items) |fend| {
+        const followingToClosing = try fend.getFollowing(null, Following.Kind.fake, allocator);
+        followingToClosing.kind = Following.Kind.fake;
+        const fclose: *TypeNode = followingToClosing.to.closing;
 
-    return fclose;
+        try result.append(fclose);
+    }
+
+    return result;
 }
 
 pub fn extractAllDecls(self: *Node, allocator: Allocator) !std.ArrayList(*Declaration) {
