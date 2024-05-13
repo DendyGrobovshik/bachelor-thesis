@@ -333,10 +333,15 @@ pub fn solveNominativePosition(current: *TypeNode, new: *TypeNode) EngineError!v
     }
 
     if (!pushedBelow) {
+        for (current.childs.items) |sub| {
+            if (try cache.greater(new, sub)) {
+                try new.setAsParentTo(sub);
+                current.removeChild(sub);
+            }
+        }
+
         try current.setAsParentTo(new);
     }
-
-    // return new;
 }
 
 pub fn searchNominativeWithGeneric(self: *Node, next: *TypeC, variance: Variance, allocator: Allocator) EngineError!std.ArrayList(*TypeNode) {

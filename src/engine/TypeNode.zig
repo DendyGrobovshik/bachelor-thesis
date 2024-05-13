@@ -86,6 +86,26 @@ pub fn setAsParentTo(parent: *TypeNode, child: *TypeNode) std.mem.Allocator.Erro
     try child.parents.append(parent);
 }
 
+// not atomic!!!
+// TODO: ensure that delete element is present
+pub fn removeChild(parent: *TypeNode, child: *TypeNode) void {
+    var childId: usize = 0;
+    for (0..parent.childs.items.len) |i| {
+        if (parent.childs.items[i] == child) {
+            childId = i;
+        }
+    }
+    _ = parent.childs.swapRemove(childId); // TODO: md use orderedRemove
+
+    var parentId: usize = 0;
+    for (0..child.parents.items.len) |i| {
+        if (child.parents.items[i] == parent) {
+            parentId = i;
+        }
+    }
+    _ = child.parents.swapRemove(parentId);
+}
+
 pub fn getFollowing(self: *TypeNode, backlink: ?*TypeNode, kind: Following.Kind, allocator: Allocator) !*Following {
     // here, in following can be only one backlink=null,
     // that presents newly introduced generic or concrete type

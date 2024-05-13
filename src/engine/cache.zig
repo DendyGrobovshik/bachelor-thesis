@@ -56,6 +56,7 @@ pub const Cache = struct {
 };
 
 // TODO: move out, design driver for target language
+// TODO: A < B can be fast checked with knowing of B < A
 pub fn greater(parent: *TypeNode, child: *TypeNode) !bool {
     const parentName = try parent.name();
     const childName = try child.name();
