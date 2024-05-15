@@ -67,7 +67,12 @@ pub const Variance = enum {
             .invariant => Variance.invariant,
             .covariant => other,
             .contravariant => other.inverse(),
-            .bivariant => other, // TODO: check
+            .bivariant => {
+                switch (other) {
+                    .invariant => Variance.invariant,
+                    else => Variance.bivariant,
+                }
+            },
         };
     }
 };
@@ -115,6 +120,7 @@ pub const Tree = struct {
 
         try file.writeAll("digraph g {\n");
         try file.writeAll("compound = true;\n");
+        //try file.writeAll("rankdir=LR;");
         try self.head.draw(file, allocator);
 
         try file.writeAll("}\n");
