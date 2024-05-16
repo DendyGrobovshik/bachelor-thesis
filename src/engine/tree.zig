@@ -67,11 +67,9 @@ pub const Variance = enum {
             .invariant => Variance.invariant,
             .covariant => other,
             .contravariant => other.inverse(),
-            .bivariant => {
-                switch (other) {
-                    .invariant => Variance.invariant,
-                    else => Variance.bivariant,
-                }
+            .bivariant => switch (other) {
+                .invariant => Variance.invariant,
+                else => Variance.bivariant,
             },
         };
     }
