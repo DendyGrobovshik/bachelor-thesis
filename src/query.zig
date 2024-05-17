@@ -448,11 +448,11 @@ pub fn Parser() type {
                 Token.arrow => {
                     const cont = try self.parseType();
                     const ty = try allocator.create(Type);
-                    ty.function = .{
+                    ty.* = .{ .function = .{
                         .from = baseType,
                         .to = cont,
                         .directly = nextToken.arrow,
-                    };
+                    } };
                     return try wrapInTypeC(ty, allocator);
                 },
                 Token.char => {
@@ -499,11 +499,11 @@ pub fn Parser() type {
                                     const ty = try allocator.create(Type);
                                     const from = try allocator.create(Type);
                                     from.* = .{ .list = .{ .list = types, .ordered = ordered } };
-                                    ty.function = .{
+                                    ty.* = .{ .function = .{
                                         .from = try wrapInTypeC(from, allocator),
                                         .to = conts.ty.function.to,
                                         .directly = conts.ty.function.directly,
-                                    };
+                                    } };
                                     return wrapInTypeC(ty, allocator);
                                 }
                             },

@@ -365,10 +365,10 @@ pub fn searchNominativeWithGeneric(self: *Node, next: *TypeC, variance: Variance
     };
 
     const ty = try allocator.create(Type);
-    ty.function = .{
+    ty.* = .{ .function = .{
         .from = from,
         .to = try TypeC.init(allocator, newNextType),
-    };
+    } };
 
     const typec = try TypeC.init(allocator, ty);
 
