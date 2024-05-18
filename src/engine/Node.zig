@@ -361,7 +361,7 @@ pub fn searchNominativeWithGeneric(self: *Node, next: *TypeC, variance: Variance
     const from = switch (generic.ty.*) {
         .list => generic,
         .nominative => generic,
-        .function => return EngineError.NotYetSupported,
+        .function => generic,
     };
 
     const ty = try allocator.create(Type);
@@ -427,7 +427,9 @@ pub fn searchFunction(self: *Node, next: *TypeC, variance: Variance, allocator: 
 pub fn searchList(self: *Node, next: *TypeC, variance: Variance, allocator: Allocator) EngineError!std.ArrayList(*TypeNode) {
     if (!next.ty.list.ordered) {
         // Order agnostic lists like OOP function parameters should be ordered before
-        return EngineError.NotYetSupported;
+
+        // NOTE: this code can be reached in case of nominative parametrized with function type
+        // return EngineError.NotYetSupported;
     }
     const followingOfOpening = try self.opening.getFollowing(null, Following.Kind.fake, allocator);
     followingOfOpening.kind = Following.Kind.fake;

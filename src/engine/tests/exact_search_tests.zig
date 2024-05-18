@@ -199,6 +199,7 @@ test "the types that were added to the tree are found by the exact query" {
         RawDecl{ .ty = "() -> Int", .name = "foo19" },
         RawDecl{ .ty = "() -> (() -> Int)", .name = "foo20" },
         RawDecl{ .ty = "() -> (Int -> ())", .name = "foo21" },
+        RawDecl{ .ty = "Array<Int -> String>", .name = "foo22" },
     };
     var searchIndex = try buildTree(&rawDecls, allocator);
 
