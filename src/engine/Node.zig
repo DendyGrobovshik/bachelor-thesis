@@ -309,7 +309,7 @@ pub fn solveNominativePosition(current: *TypeNode, new: *TypeNode) EngineError!v
     var pushedBelow = false;
 
     for (current.childs.items) |sub| {
-        if (try cache.greater(sub, new)) {
+        if (try tree.current.greater(sub, new)) {
             pushedBelow = true;
             _ = try solveNominativePosition(sub, new);
         }
@@ -321,7 +321,7 @@ pub fn solveNominativePosition(current: *TypeNode, new: *TypeNode) EngineError!v
         if (sub.isSyntetic()) {
             pushedBelow = true;
             for (sub.parents.items) |subParent| {
-                if (!(try cache.greater(subParent, new))) {
+                if (!(try tree.current.greater(subParent, new))) {
                     pushedBelow = false;
                 }
             }
@@ -334,7 +334,7 @@ pub fn solveNominativePosition(current: *TypeNode, new: *TypeNode) EngineError!v
 
     if (!pushedBelow) {
         for (current.childs.items) |sub| {
-            if (try cache.greater(new, sub)) {
+            if (try tree.current.greater(new, sub)) {
                 try new.setAsParentTo(sub);
                 current.removeChild(sub);
             }
