@@ -2,7 +2,7 @@ const std = @import("std");
 const Allocator = @import("std").mem.Allocator;
 
 const EngineError = @import("error.zig").EngineError;
-const Declaration = @import("tree.zig").Declaration;
+const Declaration = @import("entities.zig").Declaration;
 const Node = @import("Node.zig");
 const TypeNode = @import("TypeNode.zig");
 const Type = @import("../query.zig").Type;

@@ -8,7 +8,7 @@ const LOG = @import("config").logp;
 
 const EngineError = @import("error.zig").EngineError;
 const TypeNode = @import("TypeNode.zig");
-const Declaration = @import("tree.zig").Declaration;
+const Declaration = @import("entities.zig").Declaration;
 const utils = @import("utils.zig");
 const Function = @import("../query.zig").Function;
 const Type = @import("../query.zig").Type;
@@ -17,9 +17,8 @@ const Constraint = @import("../query.zig").Constraint;
 const Following = @import("following.zig").Following;
 const main = @import("../main.zig");
 const tree = @import("tree.zig");
-const defaultVariances = @import("tree.zig").defaultVariances;
-const Variance = @import("tree.zig").Variance;
-const cache = @import("cache.zig");
+const defaultVariances = @import("variance.zig").defaultVariances;
+const Variance = @import("variance.zig").Variance;
 
 // NOTE: all the decls become public
 pub usingnamespace @import("Node_printing.zig");
