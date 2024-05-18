@@ -525,6 +525,8 @@ pub fn Parser() type {
         }
 
         fn parseEndType(self: *Self) ParserError!*TypeC {
+            const allocator = self.arena.allocator();
+
             var nextToken = self.next();
             if (LOG) {
                 std.debug.print("Parsing end type... {}\n", .{nextToken});
@@ -540,6 +542,27 @@ pub fn Parser() type {
                     if (nextToken.char != '(') {
                         return ParserError.UnexpectedChar;
                     }
+                    nextToken = self.next();
+                    switch (nextToken) {
+                        .char => if (nextToken.char == ')') {
+                            // TODO: empty allocator should be used
+                            const empty = std.ArrayList(*TypeC).init(allocator);
+
+                            // // empty tuple ~ void ~ unit
+                            const emptyTuple = try List.init(allocator, empty);
+                            // it's always ordered bacuse it's a tuple, not an unorded list of params
+                            emptyTuple.ty.list.ordered = true;
+                            return emptyTuple;
+                        } else {
+                            self.pos -= 1;
+                        },
+                        .name => {
+                            self.pos -= nextToken.name.len;
+                        },
+                        .arrow => return ParserError.UnexpectedArrow,
+                        .end => return ParserError.UnexpectedEnd,
+                    }
+
                     const ty = try self.parseType();
                     switch (ty.ty.*) {
                         .list => ty.ty.list.ordered = true,
@@ -554,7 +577,6 @@ pub fn Parser() type {
                     return ty;
                 },
                 .name => {
-                    const allocator = self.arena.allocator();
                     const generic = try self.parseGeneric();
 
                     const ty = try Nominative.init(nextToken.name, generic, allocator);

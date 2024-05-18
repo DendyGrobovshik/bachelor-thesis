@@ -6,7 +6,7 @@ const Allocator = @import("std").mem.Allocator;
 const main = @import("../main.zig");
 const utils = @import("utils.zig");
 
-pub fn name(self: *TypeNode) ![]const u8 {
+pub fn name(self: *TypeNode) Allocator.Error![]const u8 {
     return switch (self.kind) {
         .universal => "U",
         .syntetic => try self.synteticName(false),

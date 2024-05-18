@@ -227,7 +227,13 @@ pub fn getLastNonCompisiteType(ty: *TypeC) EngineError!*TypeC {
 
             return ty;
         },
-        else => return ty.ty.list.list.getLast(),
+        .list => {
+            if (ty.ty.list.list.items.len == 0) {
+                return ty;
+            }
+
+            return ty.ty.list.list.getLast();
+        },
     }
 }
 

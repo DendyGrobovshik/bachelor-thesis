@@ -429,7 +429,6 @@ pub fn searchList(self: *Node, next: *TypeC, variance: Variance, allocator: Allo
         // Order agnostic lists like OOP function parameters should be ordered before
         return EngineError.NotYetSupported;
     }
-
     const followingOfOpening = try self.opening.getFollowing(null, Following.Kind.fake, allocator);
     followingOfOpening.kind = Following.Kind.fake;
 
@@ -437,7 +436,7 @@ pub fn searchList(self: *Node, next: *TypeC, variance: Variance, allocator: Allo
 
     var currentNodes: std.ArrayList(*Node) = std.ArrayList(*Node).init(allocator);
     try currentNodes.append(followingOfOpening.to);
-    var prevTypeNodes: std.ArrayList(*TypeNode) = undefined;
+    var prevTypeNodes: std.ArrayList(*TypeNode) = std.ArrayList(*TypeNode).init(allocator);
     for (next.ty.list.list.items) |nextType| {
         prevTypeNodes = std.ArrayList(*TypeNode).init(allocator);
         for (currentNodes.items) |currentNode| {
@@ -456,6 +455,13 @@ pub fn searchList(self: *Node, next: *TypeC, variance: Variance, allocator: Allo
             const node = (try prevTypeNode.getFollowing(null, Following.Kind.comma, allocator)).to; // TODO: check backlink
             try currentNodes.append(node);
         }
+    }
+
+    // in case of adding empty tuple
+    if (prevTypeNodes.items.len == 0) {
+        // just return previous opening bracket
+        // std.debug.print("searchList: {s}, open: Node = '{s}'\n", .{ next.ty, try followingOfOpening.to.by.labelName() });
+        try prevTypeNodes.append(followingOfOpening.to.by);
     }
 
     var result = std.ArrayList(*TypeNode).init(allocator);
