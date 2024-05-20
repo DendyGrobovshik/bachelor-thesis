@@ -132,6 +132,8 @@ pub const Server = struct {
                 .search => {
                     const query = try queryParser.parseQuery(self.allocator, message.search);
                     const candidates = try tree.findDeclarationsWithVariants(query.ty, Variance.covariant);
+                    _ = try self.write(Message, .{ .status = Status.finished }); // finishing asking sutype questions
+
                     var declIds = std.ArrayList(usize).init(self.allocator);
                     for (candidates.items) |candidate| {
                         try declIds.append(candidate.id);
