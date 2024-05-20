@@ -13,6 +13,8 @@ const Node = @import("Node.zig");
 const Following = @import("following.zig").Following;
 const TypeC = @import("../query_parser.zig").TypeC;
 const Variance = @import("variance.zig").Variance;
+const Shard = @import("entities.zig").Shard;
+const FollowingShard = @import("entities.zig").FollowingShard;
 
 pub usingnamespace @import("TypeNode_printing.zig");
 
@@ -64,6 +66,38 @@ pub fn init(allocator: Allocator, kind: Kind, of: *Node) EngineError!*TypeNode {
     };
 
     return self;
+}
+
+// kind of cartesian product
+pub fn findMirrorShards(self: *TypeNode, reflection: *TypeNode, allocator: Allocator) EngineError!std.ArrayList(Shard) {
+    var shards = std.ArrayList(Shard).init(allocator);
+
+    try shards.append(Shard{ .it = self, .reflection = reflection });
+
+    for (self.childs.items) |selfChild| {
+        for (reflection.childs.items) |reflectionChild| {
+            if (std.mem.eql(u8, try selfChild.name(), try reflectionChild.name())) { // TODO: is this check enough?
+                const childShards = try findMirrorShards(selfChild, reflectionChild, allocator);
+                try shards.appendSlice(childShards.items);
+            }
+        }
+    }
+
+    return shards;
+}
+
+pub fn getMirrorFollowings(self: *TypeNode, reflection: *TypeNode, allocator: Allocator) EngineError!std.ArrayList(FollowingShard) {
+    var followingShards = std.ArrayList(FollowingShard).init(allocator);
+
+    for (self.followings.items) |selfFollowing| {
+        for (reflection.followings.items) |reflectionFollowing| {
+            if (selfFollowing.eq(reflectionFollowing)) {
+                try followingShards.append(FollowingShard{ .it = selfFollowing, .reflection = reflectionFollowing });
+            }
+        }
+    }
+
+    return followingShards;
 }
 
 pub fn notEmpty(self: *TypeNode) bool {

@@ -7,6 +7,7 @@ const SegmentedList = @import("std").SegmentedList;
 const queryParser = @import("../query_parser.zig");
 const utils = @import("utils.zig");
 const constants = @import("constants.zig");
+const defaultVariances = @import("variance.zig").defaultVariances;
 
 const EngineError = @import("error.zig").EngineError;
 const TypeC = @import("../query_parser.zig").TypeC;
@@ -183,15 +184,16 @@ pub const Tree = struct {
             std.debug.print("Searcing declaration...\n", .{});
         }
 
-        var result = std.ArrayList(*Declaration).init(self.allocator);
+        // var result = std.ArrayList(*Declaration).init(self.allocator);
 
         const typec = utils.orderTypeParameters(typec_, self.allocator);
         const leafs = try self.head.searchWithVariance(typec, variance, self.allocator);
-        for (leafs.items) |leaf| {
-            const following = try leaf.getFollowing(try utils.getBacklink(typec), Following.Kind.arrow, self.allocator);
+        // for (leafs.items) |leaf| {
+        //     const following = try leaf.getFollowing(try utils.getBacklink(typec), Following.Kind.arrow, self.allocator);
 
-            try result.appendSlice(following.to.endings.items);
-        }
+        //     try result.appendSlice(following.to.endings.items);
+        // }
+        var result = try self.getDeclsOfLeafs(typec, leafs);
 
         if (utils.canBeDecurried(typec)) { // TODO: add check "if here is available vacancies"
             const decurried = try utils.decurryType(self.allocator, typec);
@@ -203,6 +205,57 @@ pub const Tree = struct {
 
                 try result.appendSlice(following2.to.endings.items);
             }
+        }
+
+        return result;
+    }
+
+    fn getDeclsOfLeafs(self: *Tree, typec: *TypeC, leafs: std.ArrayList(*TypeNode)) EngineError!std.ArrayList(*Declaration) {
+        var result = std.ArrayList(*Declaration).init(self.allocator);
+
+        for (leafs.items) |leaf| {
+            // TODO: check `try utils.getBacklink(typec)`
+            // It can be wrong due to searching with variance
+            const following = try leaf.getFollowing(try utils.getBacklink(typec), Following.Kind.arrow, self.allocator);
+
+            try result.appendSlice(following.to.endings.items);
+        }
+
+        return result;
+    }
+
+    // A little bit about variances:
+    // f: In -> X'
+    //    -     +      Default function variances
+    //
+    // g: X -> Out
+    //    -    +      Default function variances
+    //
+    // X' < X
+    // g ∘ f  = g(f(In))
+    //
+    // in: In
+    // f: In -> X'
+    // x: X' = f(in)
+    // g: X -> Out
+    // out: Out = g(x)
+    pub fn composeExpression(self: *Tree, in: *TypeC, out: *TypeC) EngineError!std.ArrayList(*Declaration) {
+        const inVariance = Variance.contravariant.x(defaultVariances.functionIn);
+        const leafsX_ = try self.head.searchWithVariance(in, inVariance, self.allocator);
+
+        var leafsX = std.ArrayList(*Node).init(self.allocator);
+        for (leafsX_.items) |possibleX_| {
+            const x_LeafsOut = try possibleX_.of.mirrorWalk(self.head, self.allocator);
+            try leafsX.appendSlice(x_LeafsOut.items);
+        }
+
+        var result = std.ArrayList(*Declaration).init(self.allocator);
+        const outVariance = Variance.covariant.x(defaultVariances.functionOut);
+        for (leafsX.items) |leafX| {
+            const leafsOut = try leafX.searchWithVariance(out, outVariance, self.allocator);
+
+            const decls = try self.getDeclsOfLeafs(out, leafsOut);
+            try result.appendSlice(decls.items);
         }
 
         return result;

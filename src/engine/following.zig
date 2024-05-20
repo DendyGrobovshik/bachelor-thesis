@@ -54,4 +54,8 @@ pub const Following = struct {
             else => false,
         };
     }
+
+    pub fn eq(self: *Following, other: *Following) bool {
+        return self.kind == other.kind; // TODO: and backlink are equal
+    }
 };

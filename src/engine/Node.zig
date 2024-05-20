@@ -7,6 +7,7 @@ const SegmentedList = @import("std").SegmentedList;
 const utils = @import("utils.zig");
 const main = @import("../main.zig");
 const tree = @import("tree.zig");
+const defaultVariances = @import("variance.zig").defaultVariances;
 
 const EngineError = @import("error.zig").EngineError;
 const TypeNode = @import("TypeNode.zig");
@@ -16,8 +17,9 @@ const Type = @import("../query_parser.zig").Type;
 const TypeC = @import("../query_parser.zig").TypeC;
 const Constraint = @import("../query_parser.zig").Constraint;
 const Following = @import("following.zig").Following;
-const defaultVariances = @import("variance.zig").defaultVariances;
 const Variance = @import("variance.zig").Variance;
+const Shard = @import("entities.zig").Shard;
+const FollowingShard = @import("entities.zig").FollowingShard;
 
 const LOG = @import("config").logp;
 
@@ -59,6 +61,28 @@ pub fn init(allocator: Allocator, by: *TypeNode) EngineError!*Node {
     };
 
     return self;
+}
+
+// return leafs of equal(up to variance) paths from reflections
+// "up to" should be taken figuratively
+pub fn mirrorWalk(self: *Node, reflection: *Node, allocator: Allocator) EngineError!std.ArrayList(*Node) {
+    // TODO: current implementation too naive
+    // TODO: check if every TypeNode of currentNode is reachable from universal
+
+    const shards = try self.universal.findMirrorShards(reflection.universal, allocator);
+
+    var result = std.ArrayList(*Node).init(allocator);
+    try result.append(self);
+    for (shards.items) |shard| {
+        const mirrorFollowings = try shard.it.getMirrorFollowings(shard.reflection, allocator);
+
+        for (mirrorFollowings.items) |mirrorFollowing| {
+            const reflectionEnds = try mirrorWalk(mirrorFollowing.it.to, mirrorFollowing.reflection.to, allocator);
+            try result.appendSlice(reflectionEnds.items);
+        }
+    }
+
+    return result;
 }
 
 pub fn search(self: *Node, next: *TypeC, allocator: Allocator) EngineError!*TypeNode {
