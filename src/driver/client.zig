@@ -109,34 +109,39 @@ pub const Client = struct {
             };
             try self.write(Message, Message{ .decl = rawDecl });
 
-            // answering questions
-            while (true) {
-                const serverMessage = try self.read(Message);
-
-                switch (serverMessage) {
-                    .question => {
-                        const answer = Answer{
-                            .is = defaultSubtype(serverMessage.question.parent, serverMessage.question.child),
-                        };
-                        const message = Message{ .answer = answer };
-                        _ = try self.write(Message, message);
-                    },
-                    .status => {
-                        if (serverMessage.status == Status.finished) {
-                            break;
-                        }
-                    },
-                    else => return Server.Error.UnexpectedMessage,
-                }
-            }
+            try self.answerSubtypeQuestions();
         }
 
         try self.write(Message, Message{ .status = Status.finished });
     }
 
+    fn answerSubtypeQuestions(self: *Client) Server.Error!void {
+        while (true) {
+            const serverMessage = try self.read(Message);
+
+            switch (serverMessage) {
+                .question => {
+                    const answer = Answer{
+                        .is = defaultSubtype(serverMessage.question.parent, serverMessage.question.child),
+                    };
+                    const message = Message{ .answer = answer };
+                    _ = try self.write(Message, message);
+                },
+                .status => {
+                    if (serverMessage.status == Status.finished) {
+                        break;
+                    }
+                },
+                else => return Server.Error.UnexpectedMessage,
+            }
+        }
+    }
+
     fn askQuestions(self: *Client) Server.Error!void {
         for (QUESTIONS) |ty| {
             try self.write(Message, Message{ .search = ty });
+
+            try self.answerSubtypeQuestions();
 
             const serverMessage = try self.read(Message);
             switch (serverMessage) {
