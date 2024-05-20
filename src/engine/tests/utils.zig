@@ -1,21 +1,23 @@
 const std = @import("std");
 const Allocator = @import("std").mem.Allocator;
 
-const tree0 = @import("../tree.zig");
-const Declaration = @import("../tree.zig").Declaration;
+const queryParser = @import("../../query_parser.zig");
+
+const Tree = @import("../tree.zig").Tree;
+const Declaration = @import("../entities.zig").Declaration;
 
 pub const RawDecl = struct {
     ty: []const u8,
     name: []const u8,
 };
 
-pub fn buildTree(rawDecls: []const RawDecl, allocator: Allocator) !tree0.Tree {
-    var tree = try tree0.Tree.init(allocator);
+pub fn buildTree(rawDecls: []const RawDecl, allocator: Allocator) !*Tree {
+    var tree = try Tree.init(allocator);
 
     for (rawDecls) |rawDecl| {
-        const q = try tree0.parseQ(allocator, rawDecl.ty);
+        const q = try queryParser.parseQuery(allocator, rawDecl.ty);
 
-        const decl = try allocator.create(tree0.Declaration);
+        const decl = try allocator.create(Declaration);
         decl.* = .{
             .name = rawDecl.name,
             .ty = q.ty,

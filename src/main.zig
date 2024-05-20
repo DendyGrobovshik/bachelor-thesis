@@ -3,10 +3,13 @@ const Allocator = @import("std").mem.Allocator;
 const print = @import("std").debug.print;
 const RndGen = std.rand.DefaultPrng;
 
-const query = @import("query.zig");
-const tree = @import("engine/tree.zig");
 const utils = @import("utils.zig");
+const queryParser = @import("query_parser.zig");
 
+const Client = @import("driver/client.zig").Client;
+const Tree = @import("engine/tree.zig").Tree;
+
+// TODO: it's currently hack, should be removed
 pub var gallocator: Allocator = undefined;
 pub var rnd: RndGen = undefined;
 
@@ -15,119 +18,68 @@ pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     gallocator = gpa.allocator();
 
-    // stdout is for the actual output of your application, for example if you
-    // are implementing gzip, then only the compressed bytes should be sent to
-    // stdout, not any debugging messages.
-    const stdout_file = std.io.getStdOut().writer();
-    var bw = std.io.bufferedWriter(stdout_file);
-    const stdout = bw.writer();
-
-    try stdout.print("Run `zig build test` to run the tests.\n", .{});
-
-    try bw.flush(); // don't forget to flush!
-
-    // var qwc = try query.Parser().init(std.heap.page_allocator, "A, B -> (A, B) -> A<T> -> (B -> (C, D<T>))");
-    // var qwc = try query.Parser().init(std.heap.page_allocator, "A -> B<T> where T < ToString & B, A < X & Y");
-    // var qwc = try query.Parser().init(std.heap.page_allocator, "A<T> -> (B -> (C, D<T>))");
-    // var qwc = try query.Parser().init(std.heap.page_allocator, "(A, (A, B))");
-    // const allocator = std.heap.page_allocator;
-    // const allocator = gpa.allocator();
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    const allocator = arena.allocator();
-
-    _ = try tree.parseQ(allocator, "A, (R -> F)");
-
-    var t = try tree.buildTreeFromFile("./data/decls2.txt", allocator);
-
-    try t.draw("graph", allocator);
-
-    const ty = try tree.parseQ(allocator, "IntEven -> T where T < Printable & Array<Int>");
-    print("parsssed in main: {s}\n", .{ty});
-    const res = try t.findDeclarations(ty.ty);
-
-    for (res.items) |decl| {
-        print("RESULT: {s}\n", .{decl.name});
-    }
-
-    // try generate();
-    {
-        var timer = try std.time.Timer.start();
-        t = try tree.buildTreeFromFile("./data/decls2.txt", allocator);
-        print("TIME buildTreeFromFile: {}\n", .{std.fmt.fmtDuration(timer.read())});
-    }
-
-    {
-        var timer = try std.time.Timer.start();
-        try t.draw("graph", allocator);
-        print("TIME tree draw: {}\n", .{std.fmt.fmtDuration(timer.read())});
-    }
-
-    {
-        var timer = try std.time.Timer.start();
-        const decls = try t.extractAllDecls(allocator);
-        print("TIME extractAllDecls: {}\n", .{std.fmt.fmtDuration(timer.read())});
-
-        print("DECLARARATIONS extracted from tree:\n", .{});
-        for (decls.items) |decl| {
-            print("{s}: {s}", .{ decl.name, decl.ty.ty });
-
-            const typesWithConstraints = try decl.ty.collectConstraints(gallocator);
-            if (typesWithConstraints.items.len > 0) {
-                print(" where ", .{});
-                for (typesWithConstraints.items[0 .. typesWithConstraints.items.len - 1]) |typeWithConstraints| {
-                    print("{s}, ", .{try typeWithConstraints.constraintsText(allocator)});
-                }
-
-                print("{s}", .{try typesWithConstraints.items[typesWithConstraints.items.len - 1].constraintsText(allocator)});
-            }
-
-            print("\n", .{});
-        }
-    }
-}
-
-fn generate() !void {
-    var t: tree.Tree = undefined;
-    // var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    // const allocator = gpa.allocator();
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    const allocator = arena.allocator();
-
-    {
-        var timer = try std.time.Timer.start();
-        try generateDecls();
-        print("TIME generateDecls: {}\n", .{std.fmt.fmtDuration(timer.read())});
-    }
-
-    {
-        var timer = try std.time.Timer.start();
-        t = try tree.buildTreeFromFile("./data/decls3.txt", allocator);
-        print("TIME buildTreeFromFile: {}\n", .{std.fmt.fmtDuration(timer.read())});
-    }
-
-    {
-        var timer = try std.time.Timer.start();
-        // try t.draw("graph", allocator);
-        print("TIME tree draw: {}\n", .{std.fmt.fmtDuration(timer.read())});
-    }
-}
-
-fn generateDecls() !void {
-    const file = try std.fs.cwd().createFile(
-        "./data/decls3.txt",
-        .{ .truncate = true },
-    );
-    defer file.close();
-
     rnd = RndGen.init(0);
-    for (0..10000) |_| {
-        const typec = try std.fmt.allocPrint(gallocator, "{s}", .{
-            try query.TypeC.generate(gallocator),
-        });
 
-        try file.writeAll(try std.fmt.allocPrint(gallocator, "{s}: {s}\n", .{
-            try utils.randomName(gallocator),
-            typec,
-        }));
+    // try demoParsing();
+    // try demoTree();
+    try demoServer();
+}
+
+fn demoParsing() !void {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    const allocator = arena.allocator();
+    defer arena.deinit();
+
+    const query = try queryParser.parseQuery(allocator, "Array<String> -> Array<Int>");
+
+    print("Parsed query type: '{s}'\n", .{query.ty});
+}
+
+fn demoServer() !void {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    const allocator = arena.allocator();
+    defer arena.deinit();
+
+    const handle = try std.Thread.spawn(.{}, Tree.runAsServerAndDraw, .{
+        allocator,
+    });
+
+    // awaiting server binding
+    std.time.sleep(10 * std.time.ns_per_ms);
+
+    const client = try Client.initAndConnect(allocator);
+    try Client.run(client);
+
+    handle.join();
+
+    print("Memory used: {d:.2} KB\n", .{@as(f64, @floatFromInt(arena.queryCapacity())) / 1000.0});
+    print("Memory used: {d:.2} MB\n", .{@as(f64, @floatFromInt(arena.queryCapacity())) / 1000000.0});
+}
+
+fn demoTree() !void {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    const allocator = arena.allocator();
+    defer arena.deinit();
+
+    var tree: *Tree = undefined;
+    { // Building tree from file
+        var timer = try std.time.Timer.start();
+        tree = try Tree.buildTreeFromFile("./data/decls2.txt", allocator);
+        print("TIME buildTreeFromFile: {}\n", .{std.fmt.fmtDuration(timer.read())});
+
+        print("Memory used: {d:.2} KB\n", .{@as(f64, @floatFromInt(arena.queryCapacity())) / 1000.0});
+        print("Memory used: {d:.2} MB\n", .{@as(f64, @floatFromInt(arena.queryCapacity())) / 1000000.0});
+    }
+
+    // visualizing tree in graph.png
+    try tree.draw("graph", allocator);
+
+    { // Searching declarations by types
+        const query = try queryParser.parseQuery(allocator, "G<T> where T < Printable, G < Printable");
+        const res = try tree.findDeclarations(query.ty); // do exact search!
+
+        for (res.items) |decl| {
+            print("Found declaration: {s}\n", .{decl.name});
+        }
     }
 }

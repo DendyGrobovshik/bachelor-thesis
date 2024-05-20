@@ -4,14 +4,14 @@ const std = @import("std");
 const Allocator = @import("std").mem.Allocator;
 const SegmentedList = @import("std").SegmentedList;
 
+const utils = @import("utils.zig");
+const main = @import("../main.zig");
+
 const EngineError = @import("error.zig").EngineError;
 const Declaration = @import("entities.zig").Declaration;
 const Node = @import("Node.zig");
 const Following = @import("following.zig").Following;
-const utils = @import("utils.zig");
-const String = @import("../utils.zig").String;
-const TypeC = @import("../query.zig").TypeC;
-const main = @import("../main.zig");
+const TypeC = @import("../query_parser.zig").TypeC;
 const Variance = @import("variance.zig").Variance;
 
 pub usingnamespace @import("TypeNode_printing.zig");

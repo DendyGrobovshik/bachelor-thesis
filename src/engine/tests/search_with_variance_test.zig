@@ -1,13 +1,12 @@
 const std = @import("std");
 const Allocator = @import("std").mem.Allocator;
 
-const RawDecl = @import("utils.zig").RawDecl;
-const buildTree = @import("utils.zig").buildTree;
 const utils = @import("utils.zig");
+const buildTree = utils.buildTree;
+const queryParser = @import("../../query_parser.zig");
 
-const query0 = @import("../../query.zig");
-const tree0 = @import("../tree.zig");
-const Variance = @import("../tree.zig").Variance;
+const RawDecl = @import("utils.zig").RawDecl;
+const Variance = @import("../variance.zig").Variance;
 
 test "function output variance in covariant" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -22,7 +21,7 @@ test "function output variance in covariant" {
     var searchIndex = try buildTree(&rawDecls, allocator);
 
     {
-        const ty = try tree0.parseQ(allocator, "Int -> Int");
+        const ty = try queryParser.parseQuery(allocator, "Int -> Int");
 
         const decls = try searchIndex.findDeclarationsWithVariants(ty.ty, Variance.covariant);
 
@@ -33,7 +32,7 @@ test "function output variance in covariant" {
     }
 
     {
-        const ty = try tree0.parseQ(allocator, "Int -> Bool");
+        const ty = try queryParser.parseQuery(allocator, "Int -> Bool");
         const decls = try searchIndex.findDeclarations(ty.ty);
 
         try std.testing.expectEqual(1, decls.items.len);
@@ -55,7 +54,7 @@ test "function input is contravariant" {
     var searchIndex = try buildTree(&rawDecls, allocator);
 
     {
-        const ty = try tree0.parseQ(allocator, "IntEven -> Int");
+        const ty = try queryParser.parseQuery(allocator, "IntEven -> Int");
 
         const decls = try searchIndex.findDeclarationsWithVariants(ty.ty, Variance.covariant);
 
@@ -67,7 +66,7 @@ test "function input is contravariant" {
     }
 
     {
-        const ty = try tree0.parseQ(allocator, "Int -> Bool");
+        const ty = try queryParser.parseQuery(allocator, "Int -> Bool");
         const decls = try searchIndex.findDeclarations(ty.ty);
 
         try std.testing.expectEqual(1, decls.items.len);
@@ -91,7 +90,7 @@ test "function input variance applies for all types" {
     var searchIndex = try buildTree(&rawDecls, allocator);
 
     {
-        const ty = try tree0.parseQ(allocator, "IntEven, IntEven -> Int");
+        const ty = try queryParser.parseQuery(allocator, "IntEven, IntEven -> Int");
 
         const decls = try searchIndex.findDeclarationsWithVariants(ty.ty, Variance.covariant);
 
@@ -118,7 +117,7 @@ test "generics invariant by default" {
     var searchIndex = try buildTree(&rawDecls, allocator);
 
     for (rawDecls) |rawDecl| {
-        const query = try tree0.parseQ(allocator, rawDecl.ty);
+        const query = try queryParser.parseQuery(allocator, rawDecl.ty);
         const decls = try searchIndex.findDeclarations(query.ty);
 
         try std.testing.expectEqual(1, decls.items.len);
@@ -141,7 +140,7 @@ test "lists are covariant by default" {
     var searchIndex = try buildTree(&rawDecls, allocator);
 
     {
-        const ty = try tree0.parseQ(allocator, "(Int, Int)");
+        const ty = try queryParser.parseQuery(allocator, "(Int, Int)");
 
         const decls = try searchIndex.findDeclarationsWithVariants(ty.ty, Variance.covariant);
 

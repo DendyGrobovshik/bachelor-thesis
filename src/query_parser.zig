@@ -2,11 +2,25 @@ const std = @import("std");
 const Allocator = @import("std").mem.Allocator;
 const RndGen = std.rand.DefaultPrng;
 
-const LOG = @import("config").logp;
-
 const TypeNode = @import("engine/TypeNode.zig");
 const utils = @import("utils.zig");
 const main = @import("main.zig");
+
+const LOG = @import("config").logp;
+
+pub fn parseQuery(allocator: Allocator, str: []const u8) Parser().Error!Query {
+    var parser = try Parser().init(allocator, str);
+    const query = parser.parse() catch |err| {
+        parser.printError(err);
+        return err;
+    };
+
+    if (LOG) {
+        std.debug.print("PARSED Q: {}\n", .{query});
+    }
+
+    return query;
+}
 
 const Nominative = struct {
     name: []const u8,
@@ -329,15 +343,6 @@ pub const Query = struct {
     }
 };
 
-pub const ParserError = error{
-    UnclosedAngleBracket,
-    UnclosedParentheses,
-    UnexpectedNominative,
-    UnexpectedArrow,
-    UnexpectedChar,
-    UnexpectedEnd,
-} || std.mem.Allocator.Error;
-
 pub fn Parser() type {
     const TokenKind = enum {
         char,
@@ -354,6 +359,15 @@ pub fn Parser() type {
     };
 
     return struct {
+        pub const Error = error{
+            UnclosedAngleBracket,
+            UnclosedParentheses,
+            UnexpectedNominative,
+            UnexpectedArrow,
+            UnexpectedChar,
+            UnexpectedEnd,
+        } || std.mem.Allocator.Error;
+
         const END: u8 = 3; // ASCII End-of-Text character
         const Self = @This();
 
@@ -388,7 +402,7 @@ pub fn Parser() type {
         }
 
         /// Debug only
-        pub fn printError(self: *Self, err: ParserError) void {
+        pub fn printError(self: *Self, err: Parser().Error) void {
             std.debug.print("Error happend: {}\n", .{err});
             for (0..self.str.len - 1) |i| {
                 const c = if (self.str[i] == END) 'w' else self.str[i];
@@ -402,7 +416,7 @@ pub fn Parser() type {
             std.debug.print("^\n", .{});
         }
 
-        pub fn parse(self: *Self) ParserError!Query {
+        pub fn parse(self: *Self) Parser().Error!Query {
             const ty = try parseType(self);
 
             const allocator = self.arena.allocator();
@@ -432,7 +446,7 @@ pub fn Parser() type {
             };
         }
 
-        pub fn parseType(self: *Self) ParserError!*TypeC {
+        pub fn parseType(self: *Self) Parser().Error!*TypeC {
             if (LOG) {
                 std.debug.print("Parsing {s} ... {}\n", .{ self.str, self.pos });
             }
@@ -457,7 +471,7 @@ pub fn Parser() type {
                 },
                 Token.char => {
                     if (nextToken.char != ',' and nextToken.char != ')' and nextToken.char != '>') {
-                        return ParserError.UnexpectedChar;
+                        return Parser().Error.UnexpectedChar;
                     }
 
                     if (nextToken.char == ')') {
@@ -520,11 +534,11 @@ pub fn Parser() type {
                     return try wrapInTypeC(ty, allocator);
                 },
                 Token.end => return baseType,
-                Token.name => return ParserError.UnexpectedNominative,
+                Token.name => return Parser().Error.UnexpectedNominative,
             }
         }
 
-        fn parseEndType(self: *Self) ParserError!*TypeC {
+        fn parseEndType(self: *Self) Parser().Error!*TypeC {
             const allocator = self.arena.allocator();
 
             var nextToken = self.next();
@@ -540,7 +554,7 @@ pub fn Parser() type {
                     }
 
                     if (nextToken.char != '(') {
-                        return ParserError.UnexpectedChar;
+                        return Parser().Error.UnexpectedChar;
                     }
                     nextToken = self.next();
                     switch (nextToken) {
@@ -559,8 +573,8 @@ pub fn Parser() type {
                         .name => {
                             self.pos -= nextToken.name.len;
                         },
-                        .arrow => return ParserError.UnexpectedArrow,
-                        .end => return ParserError.UnexpectedEnd,
+                        .arrow => return Parser().Error.UnexpectedArrow,
+                        .end => return Parser().Error.UnexpectedEnd,
                     }
 
                     const ty = try self.parseType();
@@ -571,7 +585,7 @@ pub fn Parser() type {
                     }
                     nextToken = self.next();
                     if (nextToken.char != ')') {
-                        return ParserError.UnexpectedChar;
+                        return Parser().Error.UnexpectedChar;
                     }
 
                     return ty;
@@ -592,12 +606,12 @@ pub fn Parser() type {
                         return res;
                     }
                 },
-                .arrow => return ParserError.UnexpectedArrow,
-                .end => return ParserError.UnexpectedEnd,
+                .arrow => return Parser().Error.UnexpectedArrow,
+                .end => return Parser().Error.UnexpectedEnd,
             }
         }
 
-        fn parseGeneric(self: *Self) ParserError!?*TypeC {
+        fn parseGeneric(self: *Self) Parser().Error!?*TypeC {
             var nextToken = self.next();
 
             switch (nextToken) {
@@ -616,12 +630,12 @@ pub fn Parser() type {
                     nextToken = self.next();
                     if (nextToken.char != '>') {
                         self.pos -= 1;
-                        return ParserError.UnclosedAngleBracket;
+                        return Parser().Error.UnclosedAngleBracket;
                     }
 
                     return try unwrapGeneric(generic);
                 },
-                .name => return ParserError.UnexpectedNominative,
+                .name => return Parser().Error.UnexpectedNominative,
                 .arrow => {
                     self.pos -= 2;
                     return null;
@@ -631,7 +645,7 @@ pub fn Parser() type {
         }
 
         // TODO: free memory
-        pub fn unwrapGeneric(generic: *TypeC) ParserError!*TypeC {
+        pub fn unwrapGeneric(generic: *TypeC) Parser().Error!*TypeC {
             switch (generic.ty.*) {
                 .list => {
                     if (generic.ty.list.list.items.len == 1) {
@@ -646,7 +660,7 @@ pub fn Parser() type {
             return generic;
         }
 
-        pub fn parseConstraints(self: *Self) ParserError!std.ArrayList(Constraint) {
+        pub fn parseConstraints(self: *Self) Parser().Error!std.ArrayList(Constraint) {
             if (LOG) {
                 std.debug.print("Start parsrins constraints...\n", .{});
             }
@@ -661,12 +675,12 @@ pub fn Parser() type {
                 switch (nextToken) {
                     .char => {
                         if (nextToken.char != '<') {
-                            return ParserError.UnexpectedChar;
+                            return Parser().Error.UnexpectedChar;
                         }
                     },
-                    .arrow => return ParserError.UnexpectedArrow,
-                    .name => return ParserError.UnexpectedNominative,
-                    .end => return ParserError.UnexpectedEnd,
+                    .arrow => return Parser().Error.UnexpectedArrow,
+                    .name => return Parser().Error.UnexpectedNominative,
+                    .end => return Parser().Error.UnexpectedEnd,
                 }
                 var superTypes = std.ArrayList(*TypeC).init(allocator);
 
@@ -686,11 +700,11 @@ pub fn Parser() type {
                                     break;
                                 },
                                 '&' => continue,
-                                else => return ParserError.UnexpectedChar,
+                                else => return Parser().Error.UnexpectedChar,
                             }
                         },
-                        .name => return ParserError.UnexpectedNominative,
-                        .arrow => return ParserError.UnexpectedArrow,
+                        .name => return Parser().Error.UnexpectedNominative,
+                        .arrow => return Parser().Error.UnexpectedArrow,
                     }
                 }
 
@@ -705,10 +719,10 @@ pub fn Parser() type {
                             continue;
                         }
 
-                        return ParserError.UnexpectedChar;
+                        return Parser().Error.UnexpectedChar;
                     },
-                    .name => return ParserError.UnexpectedNominative,
-                    .arrow => return ParserError.UnexpectedArrow,
+                    .name => return Parser().Error.UnexpectedNominative,
+                    .arrow => return Parser().Error.UnexpectedArrow,
                 }
             }
 

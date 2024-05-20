@@ -1,16 +1,17 @@
 const std = @import("std");
 const Allocator = @import("std").mem.Allocator;
 
+const main = @import("../main.zig");
+
 const EngineError = @import("error.zig").EngineError;
 const Declaration = @import("entities.zig").Declaration;
 const Node = @import("Node.zig");
 const TypeNode = @import("TypeNode.zig");
-const Type = @import("../query.zig").Type;
-const List = @import("../query.zig").List;
-const Constraint = @import("../query.zig").Constraint;
-const TypeC = @import("../query.zig").TypeC;
+const Type = @import("../query_parser.zig").Type;
+const List = @import("../query_parser.zig").List;
+const Constraint = @import("../query_parser.zig").Constraint;
+const TypeC = @import("../query_parser.zig").TypeC;
 const Following = @import("following.zig").Following;
-const main = @import("../main.zig");
 
 fn replaceWith(allocator: Allocator, str: []const u8, what: []const u8, with: []const u8) ![]const u8 {
     var result = std.ArrayList(u8).init(allocator);

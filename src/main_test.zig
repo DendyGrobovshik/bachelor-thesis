@@ -1,10 +1,9 @@
 const std = @import("std");
-const query = @import("query.zig");
 
 comptime {
     const test_files = [_]type{
         @import("tests/utils_test.zig"),
-        @import("query.zig"),
+        @import("query_parser.zig"),
         @import("engine/tree.zig"),
         @import("engine/Node.zig"),
         @import("engine/TypeNode.zig"),

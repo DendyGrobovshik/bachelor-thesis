@@ -3,9 +3,9 @@ const Allocator = @import("std").mem.Allocator;
 const RndGen = std.rand.DefaultPrng;
 
 const main = @import("main.zig");
-const query = @import("query.zig");
-const TypeC = query.TypeC;
-const List = query.List;
+const queryParser = @import("query_parser.zig");
+const TypeC = queryParser.TypeC;
+const List = queryParser.List;
 
 pub fn randomName(allocator: Allocator) anyerror![]const u8 {
     var name = std.ArrayList(u8).init(allocator);

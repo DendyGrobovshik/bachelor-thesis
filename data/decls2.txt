@@ -18,3 +18,4 @@ threeParam: Ab, Bc, Cd -> Ok
 unitIn : () -> Inta
 withUnit2 : () -> (() -> Int)
 withUnit3 : () -> (Int -> ())
+fgen : Array<Int -> String>

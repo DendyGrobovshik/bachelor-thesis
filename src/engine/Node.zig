@@ -4,21 +4,22 @@ const std = @import("std");
 const Allocator = @import("std").mem.Allocator;
 const SegmentedList = @import("std").SegmentedList;
 
-const LOG = @import("config").logp;
+const utils = @import("utils.zig");
+const main = @import("../main.zig");
+const tree = @import("tree.zig");
 
 const EngineError = @import("error.zig").EngineError;
 const TypeNode = @import("TypeNode.zig");
 const Declaration = @import("entities.zig").Declaration;
-const utils = @import("utils.zig");
-const Function = @import("../query.zig").Function;
-const Type = @import("../query.zig").Type;
-const TypeC = @import("../query.zig").TypeC;
-const Constraint = @import("../query.zig").Constraint;
+const Function = @import("../query_parser.zig").Function;
+const Type = @import("../query_parser.zig").Type;
+const TypeC = @import("../query_parser.zig").TypeC;
+const Constraint = @import("../query_parser.zig").Constraint;
 const Following = @import("following.zig").Following;
-const main = @import("../main.zig");
-const tree = @import("tree.zig");
 const defaultVariances = @import("variance.zig").defaultVariances;
 const Variance = @import("variance.zig").Variance;
+
+const LOG = @import("config").logp;
 
 // NOTE: all the decls become public
 pub usingnamespace @import("Node_printing.zig");
@@ -70,6 +71,9 @@ pub fn search(self: *Node, next: *TypeC, allocator: Allocator) EngineError!*Type
 
 // do exact search or insert if no present
 pub fn searchWithVariance(self: *Node, next: *TypeC, variance: Variance, allocator: Allocator) EngineError!std.ArrayList(*TypeNode) {
+    if (LOG) {
+        std.debug.print("searchWithVariance: {s}\n", .{next.ty});
+    }
     return switch (next.ty.*) {
         .nominative => try self.searchNominative(next, variance, allocator),
         .function => try self.searchFunction(next, variance, allocator),
@@ -78,6 +82,9 @@ pub fn searchWithVariance(self: *Node, next: *TypeC, variance: Variance, allocat
 }
 
 pub fn searchNominative(self: *Node, next: *TypeC, variance: Variance, allocator: Allocator) EngineError!std.ArrayList(*TypeNode) {
+    if (LOG) {
+        std.debug.print("searchNominative: {s}\n", .{next.ty});
+    }
     if (next.ty.nominative.generic) |_| {
         return self.searchNominativeWithGeneric(next, variance, allocator);
     }

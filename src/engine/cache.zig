@@ -55,12 +55,12 @@ pub const Cache = struct {
                 }
             }
 
-            const isParent = try self.tree.calculate(parent, child);
+            const isParent = try self.tree.subtype(parent, child);
             try childs.append(.{ .name = childName, .is = isParent });
             return isParent;
         } else {
             var childs = std.ArrayList(Cache.Child).init(self.allocator);
-            const isParent = try self.tree.calculate(parent, child);
+            const isParent = try self.tree.subtype(parent, child);
             try childs.append(.{ .name = childName, .is = isParent });
 
             try self.childsOf.put(parentName, childs);
@@ -69,5 +69,24 @@ pub const Cache = struct {
         }
 
         unreachable;
+    }
+
+    pub fn defaultSubtype(parent: *TypeNode, child: *TypeNode) !bool {
+        const Pair = struct { []const u8, []const u8 };
+
+        const pairs = [_]Pair{
+            .{ "Collection", "String" },
+            .{ "Int", "IntEven" },
+            .{ "Printable", "IntEven" },
+            .{ "Printable", "Collection" },
+        };
+
+        for (pairs) |pair| {
+            if (std.mem.eql(u8, try parent.name(), pair[0]) and std.mem.eql(u8, try child.name(), pair[1])) {
+                return true;
+            }
+        }
+
+        return false;
     }
 };

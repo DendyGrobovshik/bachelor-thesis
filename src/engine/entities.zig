@@ -1,12 +1,13 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
-const query = @import("../query.zig");
-const TypeC = @import("../query.zig").TypeC;
+const queryParser = @import("../query_parser.zig");
+
+const TypeC = queryParser.TypeC;
 
 pub const Declaration = struct {
     name: []const u8,
-    ty: *query.TypeC,
+    ty: *TypeC,
     id: usize = 0,
 
     pub fn init(allocator: Allocator, name: []const u8, ty: *TypeC) !*Declaration {

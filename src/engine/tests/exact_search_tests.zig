@@ -1,11 +1,10 @@
 const std = @import("std");
 const Allocator = @import("std").mem.Allocator;
 
-const RawDecl = @import("utils.zig").RawDecl;
 const buildTree = @import("utils.zig").buildTree;
+const queryParser = @import("../../query_parser.zig");
 
-const query0 = @import("../../query.zig");
-const tree0 = @import("../tree.zig");
+const RawDecl = @import("utils.zig").RawDecl;
 
 // NOTE: All the tests the file are about exact search(no variance or inheritance)
 
@@ -20,7 +19,7 @@ test "higher order functions are not mixed with common" {
     var searchIndex = try buildTree(&rawDecls, allocator);
 
     for (rawDecls) |rawDecl| {
-        const query = try tree0.parseQ(allocator, rawDecl.ty);
+        const query = try queryParser.parseQuery(allocator, rawDecl.ty);
         const decls = try searchIndex.findDeclarations(query.ty);
 
         try std.testing.expectEqual(decls.items.len, 1);
@@ -39,7 +38,7 @@ test "generics differs with different arguments differs" {
     var searchIndex = try buildTree(&rawDecls, allocator);
 
     for (rawDecls) |rawDecl| {
-        const query = try tree0.parseQ(allocator, rawDecl.ty);
+        const query = try queryParser.parseQuery(allocator, rawDecl.ty);
         const decls = try searchIndex.findDeclarations(query.ty);
 
         try std.testing.expectEqual(decls.items.len, 1);
@@ -58,7 +57,7 @@ test "nominative with concrete differs from nominative with generic" {
     var searchIndex = try buildTree(&rawDecls, allocator);
 
     for (rawDecls) |rawDecl| {
-        const query = try tree0.parseQ(allocator, rawDecl.ty);
+        const query = try queryParser.parseQuery(allocator, rawDecl.ty);
         const decls = try searchIndex.findDeclarations(query.ty);
 
         try std.testing.expectEqual(decls.items.len, 1);
@@ -77,7 +76,7 @@ test "concrete type and constraint with this type" {
     var searchIndex = try buildTree(&rawDecls, allocator);
 
     for (rawDecls) |rawDecl| {
-        const query = try tree0.parseQ(allocator, rawDecl.ty);
+        const query = try queryParser.parseQuery(allocator, rawDecl.ty);
         const decls = try searchIndex.findDeclarations(query.ty);
 
         try std.testing.expectEqual(decls.items.len, 1);
@@ -98,7 +97,7 @@ test "naminative with and without generic" {
     var searchIndex = try buildTree(&rawDecls, allocator);
 
     for (rawDecls) |rawDecl| {
-        const query = try tree0.parseQ(allocator, rawDecl.ty);
+        const query = try queryParser.parseQuery(allocator, rawDecl.ty);
         const decls = try searchIndex.findDeclarations(query.ty);
 
         try std.testing.expectEqual(decls.items.len, 1);
@@ -119,7 +118,7 @@ test "two with same type" {
     var searchIndex = try buildTree(&rawDecls, allocator);
 
     for (rawDecls) |rawDecl| {
-        const query = try tree0.parseQ(allocator, rawDecl.ty);
+        const query = try queryParser.parseQuery(allocator, rawDecl.ty);
         const decls = try searchIndex.findDeclarations(query.ty);
 
         try std.testing.expectEqual(decls.items.len, 2);
@@ -141,7 +140,7 @@ test "finding lists" {
     var searchIndex = try buildTree(&rawDecls, allocator);
 
     for (rawDecls) |rawDecl| {
-        const query = try tree0.parseQ(allocator, rawDecl.ty);
+        const query = try queryParser.parseQuery(allocator, rawDecl.ty);
         const decls = try searchIndex.findDeclarations(query.ty);
 
         try std.testing.expectEqual(decls.items.len, 1);
@@ -164,7 +163,7 @@ test "unorded lists lists" {
     var searchIndex = try buildTree(&rawDecls, allocator);
 
     for (rawDecls) |rawDecl| {
-        const query = try tree0.parseQ(allocator, rawDecl.ty);
+        const query = try queryParser.parseQuery(allocator, rawDecl.ty);
         const decls = try searchIndex.findDeclarations(query.ty);
 
         try std.testing.expectEqual(decls.items.len, 1);
@@ -204,7 +203,7 @@ test "the types that were added to the tree are found by the exact query" {
     var searchIndex = try buildTree(&rawDecls, allocator);
 
     for (rawDecls) |rawDecl| {
-        const query = try tree0.parseQ(allocator, rawDecl.ty);
+        const query = try queryParser.parseQuery(allocator, rawDecl.ty);
         const decls = try searchIndex.findDeclarations(query.ty);
 
         // First declaration in result is exact match
@@ -223,7 +222,7 @@ test "function with unordered parameters is found where query is ordered" {
     };
     var searchIndex = try buildTree(&rawDecls, allocator);
 
-    const query = try tree0.parseQ(allocator, "String -> Int -> Bool");
+    const query = try queryParser.parseQuery(allocator, "String -> Int -> Bool");
     const decls = try searchIndex.findDeclarations(query.ty);
 
     try std.testing.expectEqual(3, decls.items.len);

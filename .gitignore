@@ -8,3 +8,5 @@ pages/*
 
 java_driver/node_modules/*
 ts_driver/node_modules/*
+
+src/language/*
