@@ -15,14 +15,12 @@ const Status = common.Status;
 const Hello = common.Hello;
 const RawDeclaration = common.RawDeclaration;
 const SubtypeQuestion = common.SubtypeQuestion;
-const SubtypeAnswer = common.SubtypeAnswer;
+const Answer = common.Answer;
 
 pub const Server = struct {
     pub const Error = error{
-        UnsupportedLanguge,
-        StreamUnavailable,
         CanNotDetectJsonSize,
-        UnsupportedOperation,
+        UnexpectedMessage,
     } || queryParser.Parser().Error || std.mem.Allocator.Error || std.posix.WriteError ||
         std.posix.ReadError || std.fmt.ParseIntError || std.posix.AcceptError ||
         std.net.Address.ListenError || std.json.ParseError(std.json.Scanner);
@@ -38,10 +36,11 @@ pub const Server = struct {
 
     buffer: [256]u8 = undefined,
 
+    /// binds on port = 4000 + random(0, 100)
+    /// with no fallback if ADDRINUSE
     pub fn initAndBind(allocator: Allocator) Error!*Server {
         const this = try allocator.create(Server);
 
-        // TODO: debug only, remove
         var gen = RndGen.init(@as(u64, @intCast(std.time.timestamp())));
         PORT = Server.PORT + gen.random().uintAtMost(u16, 100);
 
@@ -59,21 +58,6 @@ pub const Server = struct {
         return this;
     }
 
-    fn nextMessage(self: *Server) Error![]const u8 {
-        const readed = try self.stream.?.read(&self.buffer);
-
-        std.debug.print("Server: got message '{s}'\n", .{self.buffer[0..readed]});
-        return self.buffer[0..readed];
-    }
-
-    fn read(self: *Server, comptime T: type) Error!T {
-        return try common.read(Server, self, T);
-    }
-
-    fn write(self: *Server, comptime T: type, payload: T) !void {
-        try common.write(Server, self, T, payload);
-    }
-
     pub fn awaitAndGreetClient(self: *Server) Error!void {
         const connection = try self.instance.accept();
         std.debug.print("Server: client({any}) connected\n", .{connection.address});
@@ -82,8 +66,12 @@ pub const Server = struct {
 
         std.time.sleep(std.time.ns_per_ms * 20);
 
-        const hello = try self.read(Hello);
-        std.debug.print("Server: target language is '{s}'\n", .{hello.language});
+        const clientMessage = try self.read(Message);
+
+        switch (clientMessage) {
+            .hello => std.debug.print("Server: target language is '{s}'\n", .{clientMessage.hello.language}),
+            else => return Error.UnexpectedMessage,
+        }
     }
 
     fn parseRawDecl(self: *Server, rawDecl: RawDeclaration) Error!*Declaration {
@@ -96,37 +84,54 @@ pub const Server = struct {
         return decl;
     }
 
+    /// awaitAndGreetClient must be invoked first
     pub fn buildTree(self: *Server, t: *Tree) anyerror!void {
         std.debug.print("Server: start building tree...\n", .{});
         var timer = try std.time.Timer.start();
 
         while (true) {
-            const rawDecl = try self.read(RawDeclaration);
-            try t.addDeclaration(try self.parseRawDecl(rawDecl));
+            const message = try self.read(Message);
+            switch (message) {
+                .decl => try t.addDeclaration(try self.parseRawDecl(message.decl)),
+                .status => {
+                    if (message.status == Status.finished) {
+                        break;
+                    }
+                },
+                else => return Error.UnexpectedMessage,
+            }
 
             _ = try self.write(Message, .{ .status = Status.finished });
-            if (rawDecl.last) {
-                break;
-            }
         }
 
         std.debug.print("Server: tree builded in {}\n", .{std.fmt.fmtDuration(timer.read())});
     }
 
     pub fn askSubtype(self: *Server, parent: *TypeNode, child: *TypeNode) Error!bool {
-        const question = .{ .question = SubtypeQuestion{
+        const question = SubtypeQuestion{
             .parent = try parent.name(),
             .child = try child.name(),
-        } };
+        };
 
-        try self.write(Message, question);
+        try self.write(Message, Message{ .question = question });
 
-        const answer = (try self.read(SubtypeAnswer)).isChild;
+        const message = try self.read(Message);
 
-        return answer;
+        switch (message) {
+            .answer => return message.answer.is,
+            else => return Error.UnexpectedMessage,
+        }
     }
 
-    pub fn getStream(self: *const Server) ?net.Stream {
-        return self.stream;
+    // pub fn getStream(self: *const Server) ?net.Stream {
+    //     return self.stream;
+    // }
+
+    fn read(self: *Server, comptime T: type) Error!T {
+        return try common.read(Server, self, T);
+    }
+
+    fn write(self: *Server, comptime T: type, payload: T) !void {
+        try common.write(Server, self, T, payload);
     }
 };

@@ -7,10 +7,7 @@ const ServerError = Server.Error;
 
 pub const Hello = struct {
     language: []const u8,
-};
-
-pub const Response = struct {
-    message: []const u8,
+    // TODO: variance setting
 };
 
 pub const RawDeclaration = struct {
@@ -25,8 +22,8 @@ pub const SubtypeQuestion = struct {
     child: []const u8,
 };
 
-pub const SubtypeAnswer = struct {
-    isChild: bool,
+pub const Answer = struct {
+    is: bool,
 };
 
 pub const Status = enum {
@@ -34,13 +31,17 @@ pub const Status = enum {
 };
 
 pub const MessageKind = enum {
+    hello,
     question,
+    decl,
     answer,
     status,
 };
 pub const Message = union(MessageKind) {
+    hello: Hello,
     question: SubtypeQuestion,
-    answer: SubtypeAnswer,
+    decl: RawDeclaration,
+    answer: Answer,
     status: Status,
 };
 
