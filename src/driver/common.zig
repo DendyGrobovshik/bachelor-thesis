@@ -36,6 +36,8 @@ pub const MessageKind = enum {
     decl,
     answer,
     status,
+    search,
+    decls,
 };
 pub const Message = union(MessageKind) {
     hello: Hello,
@@ -43,6 +45,8 @@ pub const Message = union(MessageKind) {
     decl: RawDeclaration,
     answer: Answer,
     status: Status,
+    search: []const u8,
+    decls: []const usize,
 };
 
 // TODO: free memory
@@ -78,6 +82,8 @@ pub inline fn read(comptime This: type, self: *This, comptime T: type) ServerErr
     while (readed < jsonLength) {
         readed = readed + try self.stream.read(json[readed..]);
     }
+
+    // std.debug.print("JSON: '{s}'\n", .{json});
 
     const parsed = try std.json.parseFromSlice(
         T,

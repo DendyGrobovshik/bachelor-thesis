@@ -38,6 +38,12 @@ const DECLARATIONS = [_]RawDeclaration{
     .{ .name = "fgen", .ty = "Array<Int -> String>" },
 };
 
+const QUESTIONS = [_][]const u8{
+    "Int -> Array<Array<T>>",
+    "T where T < Printable & String",
+    "Array<Int>",
+};
+
 pub fn defaultSubtype(parent: []const u8, child: []const u8) bool {
     if (std.mem.eql(u8, parent, "U")) {
         return true;
@@ -90,6 +96,11 @@ pub const Client = struct {
 
         try self.write(Message, helloMessage);
 
+        try self.sendDeclarations();
+        try self.askQuestions();
+    }
+
+    fn sendDeclarations(self: *Client) Server.Error!void {
         for (DECLARATIONS, 0..) |rawDecl_, index| {
             const rawDecl = RawDeclaration{
                 .name = rawDecl_.name,
@@ -117,6 +128,31 @@ pub const Client = struct {
                     },
                     else => return Server.Error.UnexpectedMessage,
                 }
+            }
+        }
+
+        try self.write(Message, Message{ .status = Status.finished });
+    }
+
+    fn askQuestions(self: *Client) Server.Error!void {
+        for (QUESTIONS) |ty| {
+            try self.write(Message, Message{ .search = ty });
+
+            const serverMessage = try self.read(Message);
+            switch (serverMessage) {
+                .decls => {
+                    std.debug.print("QUESTION: '{s}', ", .{ty});
+                    std.debug.print("ANSWER: [", .{});
+                    for (serverMessage.decls, 0..) |declId, i| {
+                        const decl = DECLARATIONS[declId];
+                        std.debug.print("'{s}'", .{decl.name});
+                        if (i != serverMessage.decls.len - 1) {
+                            std.debug.print(", ", .{});
+                        }
+                    }
+                    std.debug.print("]\n", .{});
+                },
+                else => return Server.Error.UnexpectedMessage,
             }
         }
 

@@ -52,7 +52,7 @@ pub const Tree = struct {
 
         try server.awaitAndGreetClient();
         try server.buildTree(tree);
-        // try server.answerQuestions();
+        try server.answerQuestions(tree);
 
         try tree.draw("graph", allocator);
     }
@@ -164,6 +164,7 @@ pub const Tree = struct {
         // // and all the declaration names are indistinguishable(last name are applied to all)
         const newName = try std.fmt.allocPrint(self.allocator, "{s}", .{decl_.name});
         const decl = try Declaration.init(self.allocator, newName, ty);
+        decl.id = decl_.id;
         try following.to.endings.append(decl);
 
         if (LOG) {
@@ -176,6 +177,7 @@ pub const Tree = struct {
         return self.findDeclarationsWithVariants(typec_, Variance.invariant);
     }
 
+    // TODO: prove that they are unique
     pub fn findDeclarationsWithVariants(self: *Tree, typec_: *TypeC, variance: Variance) EngineError!std.ArrayList(*Declaration) {
         if (LOG) {
             std.debug.print("Searcing declaration...\n", .{});

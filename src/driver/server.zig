@@ -5,11 +5,12 @@ const RndGen = std.rand.DefaultPrng;
 
 const common = @import("common.zig");
 const queryParser = @import("../query_parser.zig");
-const tree = @import("../engine/tree.zig");
 
 const Tree = @import("../engine/tree.zig").Tree;
 const Declaration = @import("../engine/entities.zig").Declaration;
 const TypeNode = @import("../engine/TypeNode.zig");
+const Variance = @import("../engine/variance.zig").Variance;
+const EngineError = @import("../engine/error.zig").EngineError;
 const Message = common.Message;
 const Status = common.Status;
 const Hello = common.Hello;
@@ -85,14 +86,14 @@ pub const Server = struct {
     }
 
     /// awaitAndGreetClient must be invoked first
-    pub fn buildTree(self: *Server, t: *Tree) anyerror!void {
+    pub fn buildTree(self: *Server, tree: *Tree) anyerror!void {
         std.debug.print("Server: start building tree...\n", .{});
         var timer = try std.time.Timer.start();
 
         while (true) {
             const message = try self.read(Message);
             switch (message) {
-                .decl => try t.addDeclaration(try self.parseRawDecl(message.decl)),
+                .decl => try tree.addDeclaration(try self.parseRawDecl(message.decl)),
                 .status => {
                     if (message.status == Status.finished) {
                         break;
@@ -123,9 +124,28 @@ pub const Server = struct {
         }
     }
 
-    // pub fn getStream(self: *const Server) ?net.Stream {
-    //     return self.stream;
-    // }
+    pub fn answerQuestions(self: *Server, tree: *Tree) EngineError!void {
+        while (true) {
+            const message = try self.read(Message);
+
+            switch (message) {
+                .search => {
+                    const query = try queryParser.parseQuery(self.allocator, message.search);
+                    const candidates = try tree.findDeclarationsWithVariants(query.ty, Variance.covariant);
+                    var declIds = std.ArrayList(usize).init(self.allocator);
+                    for (candidates.items) |candidate| {
+                        try declIds.append(candidate.id);
+                    }
+
+                    try self.write(Message, Message{ .decls = declIds.items });
+                },
+                .status => if (message.status == Status.finished) {
+                    return;
+                },
+                else => return Error.UnexpectedMessage,
+            }
+        }
+    }
 
     fn read(self: *Server, comptime T: type) Error!T {
         return try common.read(Server, self, T);
