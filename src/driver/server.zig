@@ -65,6 +65,9 @@ pub const Server = struct {
 
         self.stream = connection.stream;
 
+        std.debug.print("Server: handle({})\n", .{connection.stream.handle});
+        try common.NO_DELAY(connection.stream);
+
         std.time.sleep(std.time.ns_per_ms * 20);
 
         const clientMessage = try self.read(Message);

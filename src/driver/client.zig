@@ -63,6 +63,9 @@ pub const Client = struct {
         std.debug.print("Client: connecting to server({any})...\n", .{serverAddress});
         const stream = try net.tcpConnectToAddress(serverAddress);
 
+        std.debug.print("Client: handle({})\n", .{stream.handle});
+        try common.NO_DELAY(stream);
+
         std.debug.print("Client: connected to server({any})\n", .{serverAddress});
 
         this.* = .{

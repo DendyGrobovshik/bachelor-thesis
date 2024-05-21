@@ -98,3 +98,13 @@ pub inline fn read(comptime This: type, self: *This, comptime T: type) ServerErr
 
     return parsed.value;
 }
+
+pub fn NO_DELAY(stream: net.Stream) !void {
+    const TCP_NODELAY = 0x01;
+    try std.posix.setsockopt(
+        stream.handle,
+        std.posix.IPPROTO.TCP,
+        TCP_NODELAY,
+        &std.mem.toBytes(@as(c_int, 1)),
+    );
+}
