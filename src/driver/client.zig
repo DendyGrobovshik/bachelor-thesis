@@ -4,6 +4,7 @@ const Allocator = std.mem.Allocator;
 
 const server = @import("server.zig");
 const common = @import("common.zig");
+const utils = @import("../engine/utils.zig");
 
 const Server = @import("server.zig").Server;
 const TypeNode = @import("../engine/TypeNode.zig");
@@ -44,32 +45,16 @@ const QUESTIONS = [_][]const u8{
     "Array<Int>",
 };
 
-pub fn defaultSubtype(parent: []const u8, child: []const u8) bool {
-    if (std.mem.eql(u8, parent, "U")) {
-        return true;
-    }
-
-    const Pair = struct { []const u8, []const u8 };
-
-    const pairs = [_]Pair{
-        .{ "Collection", "String" },
-        .{ "Int", "IntEven" },
-        .{ "Printable", "IntEven" },
-        .{ "Printable", "Collection" },
-    };
-
-    for (pairs) |pair| {
-        if (std.mem.eql(u8, parent, pair[0]) and std.mem.eql(u8, child, pair[1])) {
-            return true;
-        }
-    }
-
-    return false;
-}
-
 pub const Client = struct {
     allocator: Allocator,
     stream: net.Stream,
+
+    pub fn sleepAndRun(allocator: Allocator) !void {
+        std.time.sleep(10 * std.time.ns_per_ms);
+
+        const client = try Client.initAndConnect(allocator);
+        try client.run();
+    }
 
     pub fn initAndConnect(allocator: Allocator) !*Client {
         const this = try allocator.create(Client);
@@ -122,7 +107,7 @@ pub const Client = struct {
             switch (serverMessage) {
                 .question => {
                     const answer = Answer{
-                        .is = defaultSubtype(serverMessage.question.parent, serverMessage.question.child),
+                        .is = utils.defaultSubtype(serverMessage.question.parent, serverMessage.question.child),
                     };
                     const message = Message{ .answer = answer };
                     _ = try self.write(Message, message);

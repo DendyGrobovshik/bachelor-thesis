@@ -35,19 +35,18 @@ pub const Tree = struct {
     pub fn init(allocator: Allocator) !*Tree {
         const this = try allocator.create(Tree);
 
-        const cache_ = try Cache.init(allocator, this);
         const head = try Node.init(allocator, &constants.PREROOT);
 
         this.* = .{
             .head = head,
             .allocator = allocator,
-            .cache = cache_,
+            .cache = try Cache.init(allocator),
         };
         current = this;
         return this;
     }
 
-    pub fn runAsServerAndDraw(allocator: Allocator) !void {
+    pub fn runAsServer(allocator: Allocator) !*Tree {
         var tree = try Tree.init(allocator);
 
         var server = try Server.initAndBind(allocator);
@@ -55,9 +54,11 @@ pub const Tree = struct {
 
         try server.awaitAndGreetClient();
         try server.buildTree(tree);
+        std.debug.print("Tree: builded by clients declarations", .{});
+        tree.cache.statistic.print();
         try server.answerQuestions(tree);
 
-        try tree.draw("graph", allocator);
+        return tree;
     }
 
     pub fn buildTreeFromFile(path: []const u8, allocator: Allocator) !*Tree {
@@ -109,10 +110,6 @@ pub const Tree = struct {
 
     pub fn deinit(_: *Tree) void {
         // TODO:
-    }
-
-    pub fn greater(self: *Tree, parent: *TypeNode, child: *TypeNode) !bool {
-        return self.cache.greater(parent, child);
     }
 
     // uses dot to visualize builded tree
@@ -298,11 +295,11 @@ pub const Tree = struct {
         return result;
     }
 
-    pub fn subtype(self: *Tree, parent: *TypeNode, child: *TypeNode) EngineError!bool {
+    pub fn askSubtype(self: *Tree, parent: *TypeNode, child: *TypeNode) EngineError!bool {
         if (self.server) |server| {
-            return try server.askSubtype(parent, child);
+            return try self.cache.askSubtype(server, parent, child);
         } else {
-            return try Cache.defaultSubtype(parent, child);
+            return utils.defaultSubtype(try parent.name(), try child.name());
         }
     }
 };

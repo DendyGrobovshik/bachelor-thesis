@@ -2,3 +2,10 @@ f : String -> Int
 g : Int -> Bool
 
 f2 : String -> IntEven
+
+ff : Array<T> -> Collection<Int>
+gg : Collection<Int> -> Bool
+
+
+fff : Abc -> T where T < ToString & Printable
+ggg : T -> Xyz where T < ToString 

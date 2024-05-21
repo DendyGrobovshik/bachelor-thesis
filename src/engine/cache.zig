@@ -1,11 +1,13 @@
 const std = @import("std");
 const Allocator = @import("std").mem.Allocator;
 
+const main = @import("../main.zig");
+
 const Node = @import("Node.zig");
 const TypeNode = @import("TypeNode.zig");
 const constants = @import("constants.zig");
-const main = @import("../main.zig");
 const Tree = @import("./tree.zig").Tree;
+const Server = @import("../driver/server.zig").Server;
 
 pub const Cache = struct {
     const Child = struct {
@@ -13,12 +15,27 @@ pub const Cache = struct {
         is: bool,
     };
 
+    const Statistic = struct {
+        cacheMiss: i32,
+        total: i32,
+
+        pub fn print(self: Statistic) void {
+            if (self.total == 0) {
+                std.debug.print("Cache was not used\n", .{});
+                return;
+            }
+
+            const percent = @divTrunc(self.cacheMiss * 100, self.total);
+            std.debug.print("Cache miss = {}% [{}/{}]\n", .{ percent, self.cacheMiss, self.total });
+        }
+    };
+
+    statistic: Statistic,
     head: *Node,
-    tree: *Tree,
     allocator: Allocator,
     childsOf: std.StringHashMap(std.ArrayList(Child)),
 
-    pub fn init(allocator: Allocator, tree: *Tree) !*Cache {
+    pub fn init(allocator: Allocator) !*Cache {
         const head = try Node.init(allocator, &constants.PREROOT);
 
         const childsOf = std.StringHashMap(std.ArrayList(Child)).init(allocator);
@@ -26,9 +43,9 @@ pub const Cache = struct {
         const this = try allocator.create(Cache);
         this.* = .{
             .head = head,
-            .tree = tree,
             .allocator = allocator,
             .childsOf = childsOf,
+            .statistic = Statistic{ .cacheMiss = 0, .total = 0 },
         };
 
         return this;
@@ -36,7 +53,9 @@ pub const Cache = struct {
 
     // TODO: move out, design driver for target language
     // TODO: A < B can be fast checked with knowing of B < A
-    pub fn greater(self: *Cache, parent: *TypeNode, child: *TypeNode) !bool {
+    pub fn askSubtype(self: *Cache, server: *Server, parent: *TypeNode, child: *TypeNode) !bool {
+        self.statistic.total = self.statistic.total + 1;
+
         const parentName = try parent.name();
         const childName = try child.name();
 
@@ -55,12 +74,13 @@ pub const Cache = struct {
                 }
             }
 
-            const isParent = try self.tree.subtype(parent, child);
+            const isParent = try self.askServer(server, parent, child);
             try childs.append(.{ .name = childName, .is = isParent });
             return isParent;
         } else {
             var childs = std.ArrayList(Cache.Child).init(self.allocator);
-            const isParent = try self.tree.subtype(parent, child);
+
+            const isParent = try self.askServer(server, parent, child);
             try childs.append(.{ .name = childName, .is = isParent });
 
             try self.childsOf.put(parentName, childs);
@@ -71,22 +91,10 @@ pub const Cache = struct {
         unreachable;
     }
 
-    pub fn defaultSubtype(parent: *TypeNode, child: *TypeNode) !bool {
-        const Pair = struct { []const u8, []const u8 };
+    inline fn askServer(self: *Cache, server: *Server, parent: *TypeNode, child: *TypeNode) !bool {
+        self.statistic.cacheMiss = self.statistic.cacheMiss + 1;
+        const isParent = try server.askSubtype(parent, child);
 
-        const pairs = [_]Pair{
-            .{ "Collection", "String" },
-            .{ "Int", "IntEven" },
-            .{ "Printable", "IntEven" },
-            .{ "Printable", "Collection" },
-        };
-
-        for (pairs) |pair| {
-            if (std.mem.eql(u8, try parent.name(), pair[0]) and std.mem.eql(u8, try child.name(), pair[1])) {
-                return true;
-            }
-        }
-
-        return false;
+        return isParent;
     }
 };

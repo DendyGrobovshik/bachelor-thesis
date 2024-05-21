@@ -361,3 +361,26 @@ pub fn decurryType(allocator: Allocator, typec_: *TypeC) !*TypeC {
 
     return typec;
 }
+
+pub fn defaultSubtype(parent: []const u8, child: []const u8) bool {
+    if (std.mem.eql(u8, parent, "U")) {
+        return true;
+    }
+
+    const Pair = struct { []const u8, []const u8 };
+
+    const pairs = [_]Pair{
+        .{ "Collection", "String" },
+        .{ "Int", "IntEven" },
+        .{ "Printable", "IntEven" },
+        .{ "Printable", "Collection" },
+    };
+
+    for (pairs) |pair| {
+        if (std.mem.eql(u8, parent, pair[0]) and std.mem.eql(u8, child, pair[1])) {
+            return true;
+        }
+    }
+
+    return false;
+}

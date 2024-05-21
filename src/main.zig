@@ -40,20 +40,19 @@ fn demoServer() !void {
     const allocator = arena.allocator();
     defer arena.deinit();
 
-    const handle = try std.Thread.spawn(.{}, Tree.runAsServerAndDraw, .{
+    const handle = try std.Thread.spawn(.{}, Client.sleepAndRun, .{
         allocator,
     });
 
-    // awaiting server binding
-    std.time.sleep(10 * std.time.ns_per_ms);
-
-    const client = try Client.initAndConnect(allocator);
-    try Client.run(client);
+    const tree = try Tree.runAsServer(allocator);
 
     handle.join();
 
     print("Memory used: {d:.2} KB\n", .{@as(f64, @floatFromInt(arena.queryCapacity())) / 1000.0});
     print("Memory used: {d:.2} MB\n", .{@as(f64, @floatFromInt(arena.queryCapacity())) / 1000000.0});
+
+    try tree.draw("graph", allocator);
+    tree.cache.statistic.print();
 }
 
 fn demoTree() !void {
@@ -96,4 +95,18 @@ fn demoTree() !void {
             print("Candidate expression: {any}\n", .{expr});
         }
     }
+}
+
+fn startServer() !void {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    const allocator = arena.allocator();
+    defer arena.deinit();
+
+    const tree = try Tree.runAsServer(allocator);
+
+    print("Memory used: {d:.2} KB\n", .{@as(f64, @floatFromInt(arena.queryCapacity())) / 1000.0});
+    print("Memory used: {d:.2} MB\n", .{@as(f64, @floatFromInt(arena.queryCapacity())) / 1000000.0});
+
+    try tree.draw("graph", allocator);
+    tree.cache.statistic.print();
 }
