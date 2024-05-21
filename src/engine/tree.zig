@@ -17,7 +17,9 @@ const Following = @import("following.zig").Following;
 const Cache = @import("cache.zig").Cache;
 const Variance = @import("variance.zig").Variance;
 const Declaration = @import("entities.zig").Declaration;
+const Expression = @import("entities.zig").Expression;
 const Server = @import("../driver/server.zig").Server;
+const Mirror = @import("entities.zig").Mirror;
 
 const LOG = @import("config").logt;
 
@@ -184,15 +186,9 @@ pub const Tree = struct {
             std.debug.print("Searcing declaration...\n", .{});
         }
 
-        // var result = std.ArrayList(*Declaration).init(self.allocator);
-
         const typec = utils.orderTypeParameters(typec_, self.allocator);
         const leafs = try self.head.searchWithVariance(typec, variance, self.allocator);
-        // for (leafs.items) |leaf| {
-        //     const following = try leaf.getFollowing(try utils.getBacklink(typec), Following.Kind.arrow, self.allocator);
 
-        //     try result.appendSlice(following.to.endings.items);
-        // }
         var result = try self.getDeclsOfLeafs(typec, leafs);
 
         if (utils.canBeDecurried(typec)) { // TODO: add check "if here is available vacancies"
@@ -214,14 +210,20 @@ pub const Tree = struct {
         var result = std.ArrayList(*Declaration).init(self.allocator);
 
         for (leafs.items) |leaf| {
-            // TODO: check `try utils.getBacklink(typec)`
-            // It can be wrong due to searching with variance
-            const following = try leaf.getFollowing(try utils.getBacklink(typec), Following.Kind.arrow, self.allocator);
+            const declsOfLeaf = try self.getDeclsOfLeaf(leaf, typec);
 
-            try result.appendSlice(following.to.endings.items);
+            try result.appendSlice(declsOfLeaf.items);
         }
 
         return result;
+    }
+
+    fn getDeclsOfLeaf(self: *Tree, leaf: *TypeNode, typec: *TypeC) EngineError!std.ArrayList(*Declaration) {
+        // TODO: check `try utils.getBacklink(typec)`
+        // It can be wrong due to searching with variance
+        const following = try leaf.getFollowing(try utils.getBacklink(typec), Following.Kind.arrow, self.allocator);
+
+        return following.to.endings;
     }
 
     // A little bit about variances:
@@ -239,23 +241,41 @@ pub const Tree = struct {
     // x: X' = f(in)
     // g: X -> Out
     // out: Out = g(x)
-    pub fn composeExpression(self: *Tree, in: *TypeC, out: *TypeC) EngineError!std.ArrayList(*Declaration) {
+    pub fn composeExpression(self: *Tree, in: *TypeC, out: *TypeC) EngineError!std.ArrayList(Expression) {
         const inVariance = Variance.contravariant.x(defaultVariances.functionIn);
-        const leafsX_ = try self.head.searchWithVariance(in, inVariance, self.allocator);
+        const leafsX_starts = try self.head.searchWithVariance(in, inVariance, self.allocator);
 
-        var leafsX = std.ArrayList(*Node).init(self.allocator);
-        for (leafsX_.items) |possibleX_| {
-            const x_LeafsOut = try possibleX_.of.mirrorWalk(self.head, self.allocator);
-            try leafsX.appendSlice(x_LeafsOut.items);
+        var x_mirrors = std.ArrayList(Mirror).init(self.allocator);
+        for (leafsX_starts.items) |x_start| {
+            const x_startFollowingNode = try x_start.getFollowing(try utils.getBacklink(in), Following.Kind.arrow, self.allocator); // TOOD: check twice
+            // std.debug.print("Mirror Walk: '{s}' and '{s}'\n", .{
+            //     try x_startFollowingNode.to.labelName(self.allocator),
+            //     try self.head.labelName(self.allocator),
+            // });
+            const mirrors = try x_startFollowingNode.to.mirrorWalk(self.head, self.allocator);
+            // for (mirrors.items) |mirror| {
+            //     std.debug.print("mirrors: {s} {s}\n", .{
+            //         try mirror.it.labelName(self.allocator),
+            //         try mirror.reflection.labelName(self.allocator),
+            //     });
+            // }
+            try x_mirrors.appendSlice(mirrors.items);
         }
 
-        var result = std.ArrayList(*Declaration).init(self.allocator);
+        var result = std.ArrayList(Expression).init(self.allocator);
         const outVariance = Variance.covariant.x(defaultVariances.functionOut);
-        for (leafsX.items) |leafX| {
-            const leafsOut = try leafX.searchWithVariance(out, outVariance, self.allocator);
+        for (x_mirrors.items) |mirror| {
+            const leafsOut = try mirror.reflection.searchWithVariance(out, outVariance, self.allocator);
 
-            const decls = try self.getDeclsOfLeafs(out, leafsOut);
-            try result.appendSlice(decls.items);
+            const outerDecls = try self.getDeclsOfLeafs(out, leafsOut);
+
+            const innerDecls = try self.getDeclsOfLeaf(mirror.it.by, in);
+
+            for (outerDecls.items) |outer| {
+                for (innerDecls.items) |inner| {
+                    try result.append(Expression{ .inner = inner, .outer = outer });
+                }
+            }
         }
 
         return result;

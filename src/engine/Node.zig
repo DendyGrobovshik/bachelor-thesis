@@ -20,6 +20,7 @@ const Following = @import("following.zig").Following;
 const Variance = @import("variance.zig").Variance;
 const Shard = @import("entities.zig").Shard;
 const FollowingShard = @import("entities.zig").FollowingShard;
+const Mirror = @import("entities.zig").Mirror;
 
 const LOG = @import("config").logp;
 
@@ -65,20 +66,26 @@ pub fn init(allocator: Allocator, by: *TypeNode) EngineError!*Node {
 
 // return leafs of equal(up to variance) paths from reflections
 // "up to" should be taken figuratively
-pub fn mirrorWalk(self: *Node, reflection: *Node, allocator: Allocator) EngineError!std.ArrayList(*Node) {
+pub fn mirrorWalk(self: *Node, reflection: *Node, allocator: Allocator) EngineError!std.ArrayList(Mirror) {
     // TODO: current implementation too naive
     // TODO: check if every TypeNode of currentNode is reachable from universal
 
     const shards = try self.universal.findMirrorShards(reflection.universal, allocator);
 
-    var result = std.ArrayList(*Node).init(allocator);
-    try result.append(self);
-    for (shards.items) |shard| {
-        const mirrorFollowings = try shard.it.getMirrorFollowings(shard.reflection, allocator);
+    var result = std.ArrayList(Mirror).init(allocator);
+    try result.append(Mirror{ .it = self, .reflection = reflection });
+    for (shards.items) |shard| { // TODO: variance
+        const childs = try shard.it.getChildsRecursively(allocator);
+        const parents = try shard.reflection.getParentsRecursively(allocator);
+        for (childs.items) |child| {
+            for (parents.items) |parent| {
+                const mirrorFollowings = try child.getMirrorFollowings(parent, allocator);
 
-        for (mirrorFollowings.items) |mirrorFollowing| {
-            const reflectionEnds = try mirrorWalk(mirrorFollowing.it.to, mirrorFollowing.reflection.to, allocator);
-            try result.appendSlice(reflectionEnds.items);
+                for (mirrorFollowings.items) |mirrorFollowing| {
+                    const reflectionEnds = try mirrorWalk(mirrorFollowing.it.to, mirrorFollowing.reflection.to, allocator);
+                    try result.appendSlice(reflectionEnds.items);
+                }
+            }
         }
     }
 

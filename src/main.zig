@@ -21,8 +21,8 @@ pub fn main() !void {
     rnd = RndGen.init(0);
 
     // try demoParsing();
-    // try demoTree();
-    try demoServer();
+    try demoTree();
+    // try demoServer();
 }
 
 fn demoParsing() !void {
@@ -64,7 +64,7 @@ fn demoTree() !void {
     var tree: *Tree = undefined;
     { // Building tree from file
         var timer = try std.time.Timer.start();
-        tree = try Tree.buildTreeFromFile("./data/decls2.txt", allocator);
+        tree = try Tree.buildTreeFromFile("./data/decls4.txt", allocator);
         print("TIME buildTreeFromFile: {}\n", .{std.fmt.fmtDuration(timer.read())});
 
         print("Memory used: {d:.2} KB\n", .{@as(f64, @floatFromInt(arena.queryCapacity())) / 1000.0});
@@ -75,11 +75,22 @@ fn demoTree() !void {
     try tree.draw("graph", allocator);
 
     { // Searching declarations by types
-        const query = try queryParser.parseQuery(allocator, "G<T> where T < Printable, G < Printable");
+        const query = try queryParser.parseQuery(allocator, "String -> Int");
         const res = try tree.findDeclarations(query.ty); // do exact search!
 
         for (res.items) |decl| {
             print("Found declaration: {s}\n", .{decl.name});
+        }
+    }
+
+    { // Composing exression String ~> Bool
+        print("Composing expressions for: 'String ~> Bool'\n", .{});
+        const in = try queryParser.parseQuery(allocator, "String");
+        const out = try queryParser.parseQuery(allocator, "Bool");
+        const res = try tree.composeExpression(in.ty, out.ty);
+
+        for (res.items) |expr| {
+            print("Candidate expression: {any}\n", .{expr});
         }
     }
 }
