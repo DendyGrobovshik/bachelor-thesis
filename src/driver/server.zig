@@ -93,7 +93,12 @@ pub const Server = struct {
         while (true) {
             const message = try self.read(Message);
             switch (message) {
-                .decl => try tree.addDeclaration(try self.parseRawDecl(message.decl)),
+                .insert => try tree.addDeclaration(try self.parseRawDecl(message.insert)),
+                .insertMany => {
+                    for (message.insertMany) |rawDecl| {
+                        try tree.addDeclaration(try self.parseRawDecl(rawDecl));
+                    }
+                },
                 .status => {
                     if (message.status == Status.finished) {
                         break;
@@ -114,7 +119,7 @@ pub const Server = struct {
             .child = try child.name(),
         };
 
-        try self.write(Message, Message{ .question = question });
+        try self.write(Message, Message{ .subtype = question });
 
         const message = try self.read(Message);
 
@@ -139,7 +144,7 @@ pub const Server = struct {
                         try declIds.append(candidate.id);
                     }
 
-                    try self.write(Message, Message{ .decls = declIds.items });
+                    try self.write(Message, Message{ .declIds = declIds.items });
                 },
                 .status => if (message.status == Status.finished) {
                     return;

@@ -86,16 +86,19 @@ pub const Client = struct {
     }
 
     fn sendDeclarations(self: *Client) Server.Error!void {
+        var rawDecls = std.ArrayList(RawDeclaration).init(self.allocator);
         for (DECLARATIONS, 0..) |rawDecl_, index| {
             const rawDecl = RawDeclaration{
                 .name = rawDecl_.name,
                 .ty = rawDecl_.ty,
                 .index = index,
             };
-            try self.write(Message, Message{ .decl = rawDecl });
 
-            try self.answerSubtypeQuestions();
+            try rawDecls.append(rawDecl);
         }
+        try self.write(Message, Message{ .insertMany = rawDecls.items });
+
+        try self.answerSubtypeQuestions();
 
         try self.write(Message, Message{ .status = Status.finished });
     }
@@ -105,9 +108,9 @@ pub const Client = struct {
             const serverMessage = try self.read(Message);
 
             switch (serverMessage) {
-                .question => {
+                .subtype => {
                     const answer = Answer{
-                        .is = utils.defaultSubtype(serverMessage.question.parent, serverMessage.question.child),
+                        .is = utils.defaultSubtype(serverMessage.subtype.parent, serverMessage.subtype.child),
                     };
                     const message = Message{ .answer = answer };
                     _ = try self.write(Message, message);
@@ -130,13 +133,13 @@ pub const Client = struct {
 
             const serverMessage = try self.read(Message);
             switch (serverMessage) {
-                .decls => {
+                .declIds => {
                     std.debug.print("QUESTION: '{s}', ", .{ty});
                     std.debug.print("ANSWER: [", .{});
-                    for (serverMessage.decls, 0..) |declId, i| {
+                    for (serverMessage.declIds, 0..) |declId, i| {
                         const decl = DECLARATIONS[declId];
                         std.debug.print("'{s}'", .{decl.name});
-                        if (i != serverMessage.decls.len - 1) {
+                        if (i != serverMessage.declIds.len - 1) {
                             std.debug.print(", ", .{});
                         }
                     }

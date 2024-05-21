@@ -14,7 +14,6 @@ pub const RawDeclaration = struct {
     index: usize = 0,
     name: []const u8,
     ty: []const u8,
-    last: bool = false,
 };
 
 pub const SubtypeQuestion = struct {
@@ -32,21 +31,24 @@ pub const Status = enum {
 
 pub const MessageKind = enum {
     hello,
-    question,
-    decl,
+    subtype,
+    insert,
+    insertMany,
     answer,
     status,
     search,
-    decls,
+    declIds,
 };
+
 pub const Message = union(MessageKind) {
     hello: Hello,
-    question: SubtypeQuestion,
-    decl: RawDeclaration,
+    subtype: SubtypeQuestion,
+    insert: RawDeclaration,
+    insertMany: []const RawDeclaration,
     answer: Answer,
     status: Status,
     search: []const u8,
-    decls: []const usize,
+    declIds: []const usize,
 };
 
 // TODO: free memory
@@ -75,6 +77,7 @@ pub inline fn read(comptime This: type, self: *This, comptime T: type) ServerErr
     }
 
     const jsonLength = try std.fmt.parseInt(usize, &buffer, 10);
+    std.debug.print("JSON LENGTH: {}\n", .{jsonLength});
 
     var json = try self.allocator.alloc(u8, jsonLength);
 
@@ -83,7 +86,7 @@ pub inline fn read(comptime This: type, self: *This, comptime T: type) ServerErr
         readed = readed + try self.stream.read(json[readed..]);
     }
 
-    // std.debug.print("JSON: '{s}'\n", .{json});
+    std.debug.print("JSON: '{s}'\n", .{json});
 
     const parsed = try std.json.parseFromSlice(
         T,
@@ -91,7 +94,7 @@ pub inline fn read(comptime This: type, self: *This, comptime T: type) ServerErr
         json,
         .{},
     );
-    defer parsed.deinit();
+    // defer parsed.deinit(); TODO: not working in case of []RawDeclarations
 
     return parsed.value;
 }

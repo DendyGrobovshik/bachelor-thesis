@@ -403,7 +403,10 @@ pub fn Parser() type {
 
         /// Debug only
         pub fn printError(self: *Self, err: Parser().Error) void {
-            std.debug.print("Error happend: {}\n", .{err});
+            std.debug.print("Error happend: {} when parsing '{s}'\n", .{
+                err,
+                self.str,
+            });
             for (0..self.str.len - 1) |i| {
                 const c = if (self.str[i] == END) 'w' else self.str[i];
                 std.debug.print("{c}", .{c});
