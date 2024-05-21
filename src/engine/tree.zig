@@ -253,23 +253,23 @@ pub const Tree = struct {
             //     try self.head.labelName(self.allocator),
             // });
             const mirrors = try x_startFollowingNode.to.mirrorWalk(self.head, self.allocator);
-            // for (mirrors.items) |mirror| {
-            //     std.debug.print("mirrors: {s} {s}\n", .{
-            //         try mirror.it.labelName(self.allocator),
-            //         try mirror.reflection.labelName(self.allocator),
-            //     });
-            // }
             try x_mirrors.appendSlice(mirrors.items);
         }
 
         var result = std.ArrayList(Expression).init(self.allocator);
         const outVariance = Variance.covariant.x(defaultVariances.functionOut);
         for (x_mirrors.items) |mirror| {
+            // std.debug.print("mirrors: '{s}' with {} decls, '{s}'\n", .{
+            //     try mirror.it.labelName(self.allocator),
+            //     mirror.it.endings.items.len,
+            //     try mirror.reflection.labelName(self.allocator),
+            // });
+
             const leafsOut = try mirror.reflection.searchWithVariance(out, outVariance, self.allocator);
 
             const outerDecls = try self.getDeclsOfLeafs(out, leafsOut);
 
-            const innerDecls = try self.getDeclsOfLeaf(mirror.it.by, in);
+            const innerDecls = mirror.it.endings;
 
             for (outerDecls.items) |outer| {
                 for (innerDecls.items) |inner| {
