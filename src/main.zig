@@ -87,7 +87,10 @@ fn demoTree() !void {
         print("Composing expressions for: 'String ~> Bool'\n", .{});
         const in = try queryParser.parseQuery(allocator, "String");
         const out = try queryParser.parseQuery(allocator, "Bool");
+
+        var timer = try std.time.Timer.start();
         const res = try tree.composeExpression(in.ty, out.ty);
+        print("TIME composeExpression: {}\n", .{std.fmt.fmtDuration(timer.read())});
 
         for (res.items) |expr| {
             print("Candidate expression: {any}\n", .{expr});
