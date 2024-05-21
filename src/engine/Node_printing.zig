@@ -54,7 +54,7 @@ pub fn fullPathName(self: *Node) Allocator.Error![]const u8 {
     return try std.fmt.allocPrint(main.gallocator, "{s}{s}", .{ try self.by.fullPathName(), try self.byId() });
 }
 
-pub fn labelName(self: *Node, allocator: Allocator) Allocator.Error![]const u8 {
+pub fn labelName(self: *Node, allocator: Allocator) Allocator.Error![]const u8 { // TODO:
     if (self.by == &constants.PREROOT) {
         return "";
     }
@@ -91,7 +91,7 @@ pub fn draw(self: *Node, file: std.fs.File, allocator: Allocator) anyerror!void 
         label = "ROOT";
     }
     try file.writeAll(try std.fmt.allocPrint(allocator, "label = \"{s}\";\n", .{
-        utils.trimRightArrow(label),
+        try utils.fixLabel(utils.trimRightArrow(label), allocator),
     }));
 
     for (self.endings.items) |decl| {

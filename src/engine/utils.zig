@@ -34,32 +34,23 @@ fn replaceWith(allocator: Allocator, str: []const u8, what: []const u8, with: []
     return result.items;
 }
 
-// TODO: goddamn, must be fixed
-pub fn fixName(allocator: Allocator, name: []const u8, trimBegin: bool) ![]const u8 {
+pub fn fixName(name: []const u8, allocator: Allocator) ![]const u8 {
     var next: []const u8 = name;
-    // std.debug.print("fix name: '{s}'\n", .{name});
 
-    next = try replaceWith(allocator, next, "functionarrow322", " -> ");
-    next = try replaceWith(allocator, next, "opening322", "(");
-    next = try replaceWith(allocator, next, "closing322", ")");
-    next = try replaceWith(allocator, next, "leftangle322", "<");
-    next = try replaceWith(allocator, next, "rightangle322", ">");
-    next = try replaceWith(allocator, next, "( -> ", "(");
-    next = try replaceWith(allocator, next, " -> )", ")");
-    // next = try replaceWith(allocator, next, "syntetic", "?");
+    next = try replaceWith(allocator, next, ">=", "ge");
+    next = try replaceWith(allocator, next, "<=", "le");
+    next = try replaceWith(allocator, next, "==", "eq");
+    next = try replaceWith(allocator, next, "!=", "ne");
+    next = try replaceWith(allocator, next, ">", "gt");
+    next = try replaceWith(allocator, next, "<", "lt");
+    next = try replaceWith(allocator, next, "$", "dollar");
 
-    if (trimBegin and next.len > 3) {
-        return next[3..];
-    } else {
-        return next;
-    }
+    return next;
 }
 
-pub fn fixName2(allocator: Allocator, name: std.ArrayList(u8)) EngineError!std.ArrayList(u8) {
-    var result = std.ArrayList(u8).init(allocator);
-    try result.appendSlice(try fixName(allocator, name.items, true));
-
-    return result;
+// Some symbols are not valid in `dot` utility(((
+pub fn fixLabel(label: []const u8, allocator: Allocator) ![]const u8 {
+    return try fixName(label, allocator);
 }
 
 pub fn preprocessDeclaration(allocator: Allocator, decl: Declaration) EngineError!Declaration {

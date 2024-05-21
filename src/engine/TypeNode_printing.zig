@@ -46,7 +46,7 @@ pub fn fullPathName(self: *TypeNode) Allocator.Error![]const u8 {
 pub fn draw(self: *TypeNode, file: std.fs.File, allocator: Allocator) anyerror!void {
     try file.writeAll(try std.fmt.allocPrint(allocator, "{s}[label=\"{s}\",color={s},style=filled];\n", .{
         try self.fullPathName(),
-        try self.labelName(),
+        try utils.fixLabel(try self.labelName(), allocator),
         self.color(),
     }));
 }
