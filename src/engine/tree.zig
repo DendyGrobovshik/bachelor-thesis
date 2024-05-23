@@ -133,12 +133,24 @@ pub const Tree = struct {
         const pngPath = try std.fmt.allocPrint(allocator, "{s}.png", .{path});
 
         // TODO: handle proper error handling
-        _ = try std.ChildProcess.run(.{
+        const runResult = try std.ChildProcess.run(.{
             .allocator = allocator,
             .argv = &.{
                 "dot", "-T", "png", path, "-o", pngPath,
             },
         });
+
+        // std.debug.print("{any}\n", .{runResult.term});
+        switch (runResult.term) {
+            .Exited => if (runResult.term.Exited != 0) {
+                std.debug.print("Executing 'dot' return non zero code={}, stderr:\n> {s}\n", .{
+                    runResult.term.Exited,
+                    runResult.stderr,
+                });
+                return EngineError.ErrorWhileExecutingDot;
+            },
+            else => return EngineError.ErrorWhileExecutingDot,
+        }
 
         if (LOG) {
             std.debug.print("TREE DRAWN...\n", .{});
