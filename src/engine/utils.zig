@@ -41,8 +41,8 @@ pub fn fixName(name: []const u8, allocator: Allocator) ![]const u8 {
     next = try replaceWith(allocator, next, "<=", "le");
     next = try replaceWith(allocator, next, "==", "eq");
     next = try replaceWith(allocator, next, "!=", "ne");
-    next = try replaceWith(allocator, next, ">", "gt");
-    next = try replaceWith(allocator, next, "<", "lt");
+    // next = try replaceWith(allocator, next, ">", "gt");
+    // next = try replaceWith(allocator, next, "<", "lt");
     next = try replaceWith(allocator, next, "$", "dollar");
 
     return next;
