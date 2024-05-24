@@ -238,8 +238,8 @@ pub fn getLastNonCompisiteType(ty: *TypeC) EngineError!*TypeC {
 pub fn getOpenParenthesis(typeNode: *TypeNode) *TypeNode {
     var currentNode = typeNode;
 
-    while (!currentNode.isOpening()) {
-        if (currentNode.of.by.isClosing()) {
+    while (currentNode.kind != TypeNode.Kind.opening) {
+        if (currentNode.of.by.kind == TypeNode.Kind.closing) {
             const innerPairOpening = getOpenParenthesis(currentNode.of.by);
             currentNode = innerPairOpening.of.by; // node before inner opening parenthesis
         } else {

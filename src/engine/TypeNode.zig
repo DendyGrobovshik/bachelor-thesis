@@ -65,7 +65,7 @@ pub fn init(allocator: Allocator, kind: Kind, of: *Node) EngineError!*TypeNode {
 
 /// Kind of cartesian product.
 /// Recursively returns pairs of equal TypeNodes of childs.
-pub fn findMirrorShards(self: *TypeNode, storage: *AutoHashSet(Shard), reflection: *TypeNode, allocator: Allocator) EngineError!void {
+pub fn findMirrorShards(self: *TypeNode, reflection: *TypeNode, storage: *AutoHashSet(Shard), allocator: Allocator) EngineError!void {
     try storage.put(Shard{ .it = self, .reflection = reflection }, {});
 
     var selfChildsIt = self.childs.keyIterator();
@@ -73,7 +73,7 @@ pub fn findMirrorShards(self: *TypeNode, storage: *AutoHashSet(Shard), reflectio
         var reflectionChildsIt = reflection.childs.keyIterator();
         while (reflectionChildsIt.next()) |reflectionChild| {
             if (try eql(selfChild.*, reflectionChild.*, allocator)) {
-                try findMirrorShards(selfChild.*, storage, reflectionChild.*, allocator);
+                try findMirrorShards(selfChild.*, reflectionChild.*, storage, allocator);
             }
         }
     }
@@ -108,29 +108,11 @@ pub fn notEmpty(self: *TypeNode) bool {
 }
 
 pub fn setAsParentTo(parent: *TypeNode, child: *TypeNode) std.mem.Allocator.Error!void {
-    // TODO: check if it is already present
     try parent.childs.put(child, {});
     try child.parents.put(parent, {});
 }
 
-// not atomic!!!
-// TODO: ensure that delete element is present
 pub fn removeChild(parent: *TypeNode, child: *TypeNode) void {
-    // var childId: usize = 0;
-    // for (0..parent.childs.items.len) |i| {
-    //     if (parent.childs.items[i] == child) {
-    //         childId = i;
-    //     }
-    // }
-    // _ = parent.childs.swapRemove(childId); // TODO: md use orderedRemove
-
-    // var parentId: usize = 0;
-    // for (0..child.parents.items.len) |i| {
-    //     if (child.parents.items[i] == parent) {
-    //         parentId = i;
-    //     }
-    // }
-    // _ = child.parents.swapRemove(parentId);
     const r1 = parent.childs.remove(child);
     const r2 = child.parents.remove(parent);
 
@@ -140,17 +122,13 @@ pub fn removeChild(parent: *TypeNode, child: *TypeNode) void {
 }
 
 pub fn getFollowing(self: *TypeNode, backlink: ?*TypeNode, kind: Following.Kind, allocator: Allocator) !*Following {
-    // here, in following can be only one backlink=null,
-    // that presents newly introduced generic or concrete type
     for (self.followings.items) |following| {
         if (following.backlink == backlink and following.kind == kind) {
             return following;
         }
     }
 
-    // if no candidate, then it should be added
-    const following = try Following.init(allocator, self, backlink);
-    following.kind = kind;
+    const following = try Following.init(allocator, self, backlink, kind);
     try self.followings.append(following);
 
     return following;
@@ -171,41 +149,6 @@ pub fn genericFollowing(self: *TypeNode) *Following { // TODO: check if it works
 
     // TODO: check in case of paralell modification
     unreachable;
-}
-
-pub fn isSyntetic(self: *TypeNode) bool {
-    return switch (self.kind) {
-        .syntetic => true,
-        else => false,
-    };
-}
-
-pub fn isUniversal(self: *TypeNode) bool {
-    return switch (self.kind) {
-        .universal => true,
-        else => false,
-    };
-}
-
-pub fn isOpening(self: *TypeNode) bool {
-    return switch (self.kind) {
-        .opening => true,
-        else => false,
-    };
-}
-
-pub fn isClosing(self: *TypeNode) bool {
-    return switch (self.kind) {
-        .closing => true,
-        else => false,
-    };
-}
-
-pub fn isGnominative(self: *TypeNode) bool {
-    return switch (self.kind) {
-        .gnominative => true,
-        else => false,
-    };
 }
 
 pub fn extractAllDecls(self: *TypeNode, allocator: Allocator) Allocator.Error!std.ArrayList(*Declaration) {

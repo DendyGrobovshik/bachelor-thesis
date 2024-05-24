@@ -69,7 +69,7 @@ pub fn init(allocator: Allocator, by: *TypeNode) EngineError!*Node {
 // "up to" should be taken figuratively
 pub fn mirrorWalk(self: *Node, reflection: *Node, storage: *AutoHashSet(Mirror), allocator: Allocator) EngineError!void {
     var shards = AutoHashSet(Shard).init(allocator);
-    try self.universal.findMirrorShards(&shards, reflection.universal, allocator);
+    try self.universal.findMirrorShards(reflection.universal, &shards, allocator);
 
     try storage.put(Mirror{ .it = self, .reflection = reflection }, {});
 
@@ -97,8 +97,8 @@ pub fn mirrorWalk(self: *Node, reflection: *Node, storage: *AutoHashSet(Mirror),
 
 pub fn search(self: *Node, next: *TypeC, allocator: Allocator) EngineError!*TypeNode {
     const result = try self.searchWithVariance(next, Variance.invariant, allocator);
-    // TODO: assert result.size == 1
-    // TODO: free
+
+    std.debug.assert(result.items.len == 1);
 
     return result.getLast();
 }
@@ -227,7 +227,7 @@ pub fn solvePosition(self: *Node, parents_: std.ArrayList(*TypeNode), allocator:
                                 // first common child may be not only one
                                 const commonChild = xChild.*;
                                 // if common child is syntetic then no other commom childs can be
-                                if (commonChild.isSyntetic()) {
+                                if (commonChild.kind == TypeNode.Kind.syntetic) {
                                     // std.debug.print("is syntetic\n", .{});
                                     // TODO: not ignore operation result
                                     _ = parents.remove(x.*);
@@ -349,7 +349,7 @@ pub fn solveNominativePosition(current: *TypeNode, new: *TypeNode) EngineError!v
             // and substable for all top nodes of syntetic
             // TODO: возможно придётся расщеплять синтетику, потому что не все её топ ноды могут быть старшими к текущей
             // ??: опять же подходящие старшие будут поставлены выше текущий по другим путям
-            if (sub.*.isSyntetic()) {
+            if (sub.*.kind == TypeNode.Kind.syntetic) {
                 pushedBelow = true;
                 var subParentsIt = sub.*.parents.keyIterator();
                 while (subParentsIt.next()) |subParent| {

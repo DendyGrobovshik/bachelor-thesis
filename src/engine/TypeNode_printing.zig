@@ -106,9 +106,9 @@ pub fn synteticName(self: *TypeNode, isLabel: bool, allocator: Allocator) Alloca
 }
 
 pub fn partName(self: *TypeNode, arrow: []const u8, allocator: Allocator) ![]const u8 {
-    if (self.isClosing()) { // current is closing
+    if (self.kind == TypeNode.Kind.closing) {
         const prevTypeNode = self.of.by;
-        if (prevTypeNode.isGnominative()) { // and previous is gnominative
+        if (prevTypeNode.kind == TypeNode.Kind.gnominative) {
             return try std.fmt.allocPrint(allocator, "{s}{s}<{s}>{s}", .{
                 try utils.getOpenParenthesis(self).of.labelName(allocator), // type before this nominive with generic
                 try prevTypeNode.labelName(allocator), // gnominative

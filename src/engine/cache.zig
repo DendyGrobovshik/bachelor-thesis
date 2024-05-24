@@ -59,7 +59,7 @@ pub const Cache = struct {
         const parentName = try parent.name(self.allocator);
         const childName = try child.name(self.allocator);
 
-        if (parent.isUniversal()) {
+        if (parent.kind == TypeNode.Kind.universal) {
             return true;
         }
 
