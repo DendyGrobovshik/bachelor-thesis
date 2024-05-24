@@ -254,31 +254,32 @@ pub const Tree = struct {
         const inVariance = Variance.contravariant.x(defaultVariances.functionIn);
         const leafsX_starts = try self.head.searchWithVariance(in, inVariance, self.allocator);
 
-        var x_mirrors = std.ArrayList(Mirror).init(self.allocator);
+        var x_mirrors = std.AutoHashMap(Mirror, void).init(self.allocator);
         for (leafsX_starts.items) |x_start| {
             const x_startFollowingNode = try x_start.getFollowing(try utils.getBacklink(in), Following.Kind.arrow, self.allocator); // TOOD: check twice
             // std.debug.print("Mirror Walk: '{s}' and '{s}'\n", .{
             //     try x_startFollowingNode.to.labelName(self.allocator),
             //     try self.head.labelName(self.allocator),
             // });
-            const mirrors = try x_startFollowingNode.to.mirrorWalk(self.head, self.allocator);
-            try x_mirrors.appendSlice(mirrors.items);
+            try x_startFollowingNode.to.mirrorWalk(self.head, &x_mirrors, self.allocator);
         }
 
         var result = std.ArrayList(Expression).init(self.allocator);
         const outVariance = Variance.covariant.x(defaultVariances.functionOut);
-        for (x_mirrors.items) |mirror| {
+
+        var x_mirrorsIt = x_mirrors.keyIterator();
+        while (x_mirrorsIt.next()) |mirror| {
             // std.debug.print("mirrors: '{s}' with {} decls, '{s}'\n", .{
             //     try mirror.it.labelName(self.allocator),
             //     mirror.it.endings.items.len,
             //     try mirror.reflection.labelName(self.allocator),
             // });
 
-            const leafsOut = try mirror.reflection.searchWithVariance(out, outVariance, self.allocator);
+            const leafsOut = try mirror.*.reflection.searchWithVariance(out, outVariance, self.allocator);
 
             const outerDecls = try self.getDeclsOfLeafs(out, leafsOut);
 
-            const innerDecls = mirror.it.endings;
+            const innerDecls = mirror.*.it.endings;
 
             for (outerDecls.items) |outer| {
                 for (innerDecls.items) |inner| {

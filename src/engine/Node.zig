@@ -66,30 +66,32 @@ pub fn init(allocator: Allocator, by: *TypeNode) EngineError!*Node {
 
 // return leafs of equal(up to variance) paths from reflections
 // "up to" should be taken figuratively
-pub fn mirrorWalk(self: *Node, reflection: *Node, allocator: Allocator) EngineError!std.ArrayList(Mirror) {
-    // TODO: current implementation too naive
-    // TODO: check if every TypeNode of currentNode is reachable from universal
+pub fn mirrorWalk(self: *Node, reflection: *Node, storage: *std.AutoHashMap(Mirror, void), allocator: Allocator) EngineError!void {
+    var shards = std.AutoHashMap(Shard, void).init(allocator);
+    try self.universal.findMirrorShards(&shards, reflection.universal);
 
-    const shards = try self.universal.findMirrorShards(reflection.universal, allocator);
+    try storage.put(Mirror{ .it = self, .reflection = reflection }, {});
 
-    var result = std.ArrayList(Mirror).init(allocator);
-    try result.append(Mirror{ .it = self, .reflection = reflection });
-    for (shards.items) |shard| { // TODO: variance
-        const childs = try shard.it.getChildsRecursively(allocator);
-        const parents = try shard.reflection.getParentsRecursively(allocator);
-        for (childs.items) |child| {
-            for (parents.items) |parent| {
-                const mirrorFollowings = try child.getMirrorFollowings(parent, allocator);
+    var shardsIt = shards.keyIterator();
+    while (shardsIt.next()) |shard| { // TODO: variance
+        var childs = std.AutoHashMap(*TypeNode, void).init(allocator);
+        try shard.*.it.getChildsRecursively(&childs);
+
+        var parents = std.AutoHashMap(*TypeNode, void).init(allocator);
+        try shard.*.reflection.getParentsRecursively(&parents);
+
+        var childsIt = childs.keyIterator();
+        while (childsIt.next()) |child| {
+            var parentsIt = parents.keyIterator();
+            while (parentsIt.next()) |parent| {
+                const mirrorFollowings = try child.*.getMirrorFollowings(parent.*, allocator);
 
                 for (mirrorFollowings.items) |mirrorFollowing| {
-                    const reflectionEnds = try mirrorWalk(mirrorFollowing.it.to, mirrorFollowing.reflection.to, allocator);
-                    try result.appendSlice(reflectionEnds.items);
+                    try mirrorWalk(mirrorFollowing.it.to, mirrorFollowing.reflection.to, storage, allocator);
                 }
             }
         }
     }
-
-    return result;
 }
 
 pub fn search(self: *Node, next: *TypeC, allocator: Allocator) EngineError!*TypeNode {

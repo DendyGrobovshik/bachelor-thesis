@@ -31,59 +31,49 @@ pub const Kind = union(KindE) {
     universal: void,
     syntetic: void,
     nominative: []const u8,
-    gnominative: []const u8,
-    // generic: void,
+    gnominative: []const u8, // parametrized nominative (parameter represented in other TypeNode's)
     opening: void,
     closing: void,
 };
 
 kind: Kind,
 
-// direct neighbour, they can be in other Node(rly? - yes if function)
+/// Direct neighbours, they can be in other Node(rly? - yes if function)
+///
+/// It current TypeNode represent end of function (kind==closing)
 parents: std.ArrayList(*TypeNode),
 childs: std.ArrayList(*TypeNode),
 
+/// In which Node the current TypeNode is located.
 of: *Node,
 followings: std.ArrayList(*Following),
 
 pub fn init(allocator: Allocator, kind: Kind, of: *Node) EngineError!*TypeNode {
-    const parents = std.ArrayList(*TypeNode).init(allocator);
-    const childs = std.ArrayList(*TypeNode).init(allocator);
+    const this = try allocator.create(TypeNode);
 
-    const self = try allocator.create(TypeNode);
-
-    const followings = std.ArrayList(*Following).init(allocator);
-
-    // TODO: try to remove the hack caused by segfault
-    // const newOf = try std.fmt.allocPrint(allocator, "{s}", .{of});
-
-    self.* = .{
+    this.* = .{
         .kind = kind,
-        .parents = parents,
-        .childs = childs,
+        .parents = std.ArrayList(*TypeNode).init(allocator),
+        .childs = std.ArrayList(*TypeNode).init(allocator),
         .of = of,
-        .followings = followings,
+        .followings = std.ArrayList(*Following).init(allocator),
     };
 
-    return self;
+    return this;
 }
 
-// kind of cartesian product
-pub fn findMirrorShards(self: *TypeNode, reflection: *TypeNode, allocator: Allocator) EngineError!std.ArrayList(Shard) {
-    var shards = std.ArrayList(Shard).init(allocator);
-
-    try shards.append(Shard{ .it = self, .reflection = reflection });
+/// Kind of cartesian product.
+/// Recursively returns pairs of equal TypeNodes of childs.
+pub fn findMirrorShards(self: *TypeNode, storage: *std.AutoHashMap(Shard, void), reflection: *TypeNode) EngineError!void {
+    try storage.put(Shard{ .it = self, .reflection = reflection }, {});
 
     for (self.childs.items) |selfChild| {
         for (reflection.childs.items) |reflectionChild| {
-            if (std.mem.eql(u8, try selfChild.name(), try reflectionChild.name())) { // TODO: is this check enough?
-                const childShards = try findMirrorShards(selfChild, reflectionChild, allocator);
-                try shards.appendSlice(childShards.items);
+            if (try eql(selfChild, reflectionChild)) {
+                try findMirrorShards(selfChild, storage, reflectionChild);
             }
         }
     }
-
-    return shards;
 }
 
 pub fn getMirrorFollowings(self: *TypeNode, reflection: *TypeNode, allocator: Allocator) EngineError!std.ArrayList(FollowingShard) {
@@ -226,36 +216,25 @@ pub fn extractAllDecls(self: *TypeNode, allocator: Allocator) Allocator.Error!st
 // NOTE: top level variance is covariant
 pub fn getAllByVariance(self: *TypeNode, variance: Variance, allocator: Allocator) EngineError!std.ArrayList(*TypeNode) {
     var typeNodes = std.AutoHashMap(*TypeNode, void).init(allocator);
-    // try typeNodes.put(self, {});
 
-    // TODO: учесть ограничения
-    // TODO: proof that no recusrion occurs!!!
+    // TODO: take care constraints
     switch (variance) {
         .invariant => {
             try typeNodes.put(self, {});
         },
         .covariant => {
-            for ((try self.getChildsRecursively(allocator)).items) |tn| {
-                try typeNodes.put(tn, {});
-            }
+            try self.getChildsRecursively(&typeNodes);
         },
         .contravariant => {
-            for ((try self.getParentsRecursively(allocator)).items) |tn| {
-                try typeNodes.put(tn, {});
-            }
+            try self.getParentsRecursively(&typeNodes);
         },
         .bivariant => {
-            for ((try self.getChildsRecursively(allocator)).items) |tn| {
-                try typeNodes.put(tn, {});
-            }
-            for ((try self.getParentsRecursively(allocator)).items) |tn| {
-                try typeNodes.put(tn, {});
-            }
+            try self.getChildsRecursively(&typeNodes);
+            try self.getParentsRecursively(&typeNodes);
         },
     }
 
     var result = std.ArrayList(*TypeNode).init(allocator);
-    // try result.append(self);
 
     var it = typeNodes.keyIterator();
     while (it.next()) |typeNode| {
@@ -266,29 +245,23 @@ pub fn getAllByVariance(self: *TypeNode, variance: Variance, allocator: Allocato
     return result;
 }
 
-pub fn getChildsRecursively(self: *TypeNode, allocator: Allocator) Allocator.Error!std.ArrayList(*TypeNode) {
-    var result = std.ArrayList(*TypeNode).init(allocator);
-    try result.append(self);
+pub fn getChildsRecursively(self: *TypeNode, storage: *std.AutoHashMap(*TypeNode, void)) Allocator.Error!void {
+    try storage.put(self, {});
 
     for (self.childs.items) |child| {
-        const childs = try getChildsRecursively(child, allocator);
-        try result.appendSlice(childs.items);
-        // TODO: free
+        try getChildsRecursively(child, storage);
     }
-
-    return result;
 }
 
-// TODO: extract copypaste
-pub fn getParentsRecursively(self: *TypeNode, allocator: Allocator) Allocator.Error!std.ArrayList(*TypeNode) {
-    var result = std.ArrayList(*TypeNode).init(allocator);
-    try result.append(self);
+pub fn getParentsRecursively(self: *TypeNode, storage: *std.AutoHashMap(*TypeNode, void)) Allocator.Error!void {
+    try storage.put(self, {});
 
     for (self.parents.items) |parent| {
-        const childs = try getParentsRecursively(parent, allocator);
-        try result.appendSlice(childs.items);
-        // TODO: free
+        try getParentsRecursively(parent, storage);
     }
+}
 
-    return result;
+// TODO: equality of names a bit expensive, but it now it's the only way to handle syntetic
+pub fn eql(self: *TypeNode, other: *TypeNode) Allocator.Error!bool {
+    return std.mem.eql(u8, try self.name(), try other.name());
 }
