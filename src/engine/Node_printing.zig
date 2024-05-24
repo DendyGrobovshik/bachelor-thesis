@@ -46,15 +46,18 @@ pub fn notEmptyTypeNodes(self: *Node, allocator: Allocator) anyerror!std.ArrayLi
     return result;
 }
 
-pub fn fullPathName(self: *Node) Allocator.Error![]const u8 {
+pub fn fullPathName(self: *Node, allocator: Allocator) Allocator.Error![]const u8 {
     if (self.by == &constants.PREROOT) {
         return "";
     }
 
-    return try std.fmt.allocPrint(main.gallocator, "{s}{s}", .{ try self.by.fullPathName(), try self.byId() });
+    return try std.fmt.allocPrint(allocator, "{s}{s}", .{
+        try self.by.fullPathName(allocator),
+        try self.byId(),
+    });
 }
 
-pub fn labelName(self: *Node, allocator: Allocator) Allocator.Error![]const u8 { // TODO:
+pub fn labelName(self: *Node, allocator: Allocator) Allocator.Error![]const u8 {
     if (self.by == &constants.PREROOT) {
         return "";
     }
@@ -69,11 +72,11 @@ pub fn isEmpty(self: *Node) bool {
     return self.endings.items.len == 0 and
         self.named.count() == 0 and
         (self.universal.followings.items.len == 0 and
-        self.universal.childs.items.len == 2 and // open and closing
+        self.universal.childs.count() == 2 and // open and closing
         self.opening.followings.items.len == 0 and
-        self.opening.childs.items.len == 0 and
+        self.opening.childs.count() == 0 and
         self.closing.followings.items.len == 0 and
-        self.closing.childs.items.len == 0);
+        self.closing.childs.count() == 0);
 }
 
 pub fn draw(self: *Node, file: std.fs.File, allocator: Allocator) anyerror!void {
@@ -83,7 +86,7 @@ pub fn draw(self: *Node, file: std.fs.File, allocator: Allocator) anyerror!void 
 
     const typeNodes = try self.notEmptyTypeNodes(allocator);
 
-    try file.writeAll(try std.fmt.allocPrint(allocator, "subgraph cluster_{s}", .{try self.fullPathName()}));
+    try file.writeAll(try std.fmt.allocPrint(allocator, "subgraph cluster_{s}", .{try self.fullPathName(allocator)}));
     try file.writeAll("{\n");
     try file.writeAll("style=\"rounded\"\n");
     var label = try self.labelName(allocator);

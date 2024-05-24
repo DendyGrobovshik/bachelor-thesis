@@ -56,8 +56,8 @@ pub const Cache = struct {
     pub fn askSubtype(self: *Cache, server: *Server, parent: *TypeNode, child: *TypeNode) !bool {
         self.statistic.total = self.statistic.total + 1;
 
-        const parentName = try parent.name();
-        const childName = try child.name();
+        const parentName = try parent.name(self.allocator);
+        const childName = try child.name(self.allocator);
 
         if (parent.isUniversal()) {
             return true;

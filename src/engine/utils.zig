@@ -13,6 +13,10 @@ const Constraint = @import("../query_parser.zig").Constraint;
 const TypeC = @import("../query_parser.zig").TypeC;
 const Following = @import("following.zig").Following;
 
+pub inline fn AutoHashSet(comptime T: type) type {
+    return std.AutoHashMap(T, void);
+}
+
 fn replaceWith(allocator: Allocator, str: []const u8, what: []const u8, with: []const u8) ![]const u8 {
     var result = std.ArrayList(u8).init(allocator);
 

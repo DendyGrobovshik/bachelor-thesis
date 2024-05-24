@@ -118,8 +118,8 @@ pub const Server = struct {
 
     pub fn askSubtype(self: *Server, parent: *TypeNode, child: *TypeNode) Error!bool {
         const question = SubtypeQuestion{
-            .parent = try parent.name(),
-            .child = try child.name(),
+            .parent = try parent.name(self.allocator),
+            .child = try child.name(self.allocator),
         };
 
         try self.write(Message, Message{ .subtype = question });

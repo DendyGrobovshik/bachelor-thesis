@@ -9,6 +9,7 @@ const main = @import("../main.zig");
 const tree = @import("tree.zig");
 const defaultVariances = @import("variance.zig").defaultVariances;
 
+const AutoHashSet = utils.AutoHashSet;
 const EngineError = @import("error.zig").EngineError;
 const TypeNode = @import("TypeNode.zig");
 const Declaration = @import("entities.zig").Declaration;
@@ -66,18 +67,18 @@ pub fn init(allocator: Allocator, by: *TypeNode) EngineError!*Node {
 
 // return leafs of equal(up to variance) paths from reflections
 // "up to" should be taken figuratively
-pub fn mirrorWalk(self: *Node, reflection: *Node, storage: *std.AutoHashMap(Mirror, void), allocator: Allocator) EngineError!void {
-    var shards = std.AutoHashMap(Shard, void).init(allocator);
-    try self.universal.findMirrorShards(&shards, reflection.universal);
+pub fn mirrorWalk(self: *Node, reflection: *Node, storage: *AutoHashSet(Mirror), allocator: Allocator) EngineError!void {
+    var shards = AutoHashSet(Shard).init(allocator);
+    try self.universal.findMirrorShards(&shards, reflection.universal, allocator);
 
     try storage.put(Mirror{ .it = self, .reflection = reflection }, {});
 
     var shardsIt = shards.keyIterator();
     while (shardsIt.next()) |shard| { // TODO: variance
-        var childs = std.AutoHashMap(*TypeNode, void).init(allocator);
+        var childs = AutoHashSet(*TypeNode).init(allocator);
         try shard.*.it.getChildsRecursively(&childs);
 
-        var parents = std.AutoHashMap(*TypeNode, void).init(allocator);
+        var parents = AutoHashSet(*TypeNode).init(allocator);
         try shard.*.reflection.getParentsRecursively(&parents);
 
         var childsIt = childs.keyIterator();
@@ -190,7 +191,7 @@ pub fn searchGeneric(self: *Node, next: *TypeC, variance: Variance, allocator: A
 //
 // TODO: support subtype checking for functions
 pub fn solvePosition(self: *Node, parents_: std.ArrayList(*TypeNode), allocator: Allocator) EngineError!*TypeNode {
-    var parents = std.AutoHashMap(*TypeNode, void).init(allocator);
+    var parents = AutoHashSet(*TypeNode).init(allocator);
     for (parents_.items) |parent| {
         try parents.put(parent, {});
     }
@@ -218,12 +219,13 @@ pub fn solvePosition(self: *Node, parents_: std.ArrayList(*TypeNode), allocator:
             var it2 = parents.keyIterator();
             while (it2.next()) |y| {
                 if (x != y) {
-                    find_next_common_child: for (x.*.childs.items, 0..) |xChild, xi| {
-                        for (y.*.childs.items, 0..) |yChild, yi| {
-                            if (xChild == yChild) { // ptr equality
+                    var xChildIt = x.*.childs.keyIterator();
+                    find_next_common_child: while (xChildIt.next()) |xChild| {
+                        var yChildIt = x.*.childs.keyIterator();
+                        while (yChildIt.next()) |yChild| {
+                            if (xChild.* == yChild.*) { // ptr equality
                                 // first common child may be not only one
-                                const commonChild = xChild;
-                                // std.debug.print("It's common child is {s}\n", .{commonChild.of});
+                                const commonChild = xChild.*;
                                 // if common child is syntetic then no other commom childs can be
                                 if (commonChild.isSyntetic()) {
                                     // std.debug.print("is syntetic\n", .{});
@@ -231,26 +233,26 @@ pub fn solvePosition(self: *Node, parents_: std.ArrayList(*TypeNode), allocator:
                                     _ = parents.remove(x.*);
                                     _ = parents.remove(y.*);
                                     try parents.put(commonChild, {});
-                                    // std.debug.print("parents was replaced with syntetic and parents size now: {}\n", .{parents.count()});
                                 } else {
-                                    // std.debug.print("not syntetic\n", .{});
                                     // common is not syntetic, so it should be divorced from parents with syntetic
 
                                     // breaking current relations
-                                    _ = x.*.childs.swapRemove(xi);
-                                    _ = y.*.childs.swapRemove(yi);
+                                    _ = x.*.childs.remove(xChild.*); // TODO: it's not save remove element, because of iterator invalidation
+                                    _ = y.*.childs.remove(yChild.*);
 
                                     // TODO: check bug if 2 times performed same type searching
                                     var parentsRemoved: u2 = 0;
                                     remove_parents_from_child: while (true) {
                                         // std.debug.print("Removing parent from child: '{s}' with {} super\n", .{ commonChild.of, commonChild.parents.items.len });
-                                        for (0..commonChild.parents.items.len) |ci| {
-                                            if (commonChild.parents.items[ci] == x.*) {
-                                                _ = commonChild.parents.swapRemove(ci);
+
+                                        var it = commonChild.parents.keyIterator();
+                                        while (it.next()) |commonChildParents| {
+                                            if (commonChildParents.* == x.*) {
+                                                _ = commonChild.parents.remove(commonChildParents.*);
                                                 parentsRemoved += 1;
                                                 break;
-                                            } else if (commonChild.parents.items[ci] == y.*) {
-                                                _ = commonChild.parents.swapRemove(ci);
+                                            } else if (commonChildParents.* == y.*) {
+                                                _ = commonChild.parents.remove(commonChildParents.*);
                                                 parentsRemoved += 1;
                                                 break;
                                             }
@@ -261,15 +263,12 @@ pub fn solvePosition(self: *Node, parents_: std.ArrayList(*TypeNode), allocator:
                                             }
                                         }
 
-                                        if (commonChild.parents.items.len == 0) {
+                                        if (commonChild.parents.count() == 0) {
                                             break :remove_parents_from_child;
                                         }
                                     }
 
-                                    // const synteticName = try std.fmt.allocPrint(allocator, "syntetic{}", .{globalSynteticId});
-                                    // globalSynteticId += 1;
                                     const syntetic = syntetic_ orelse try TypeNode.init(allocator, TypeNode.Kind.syntetic, self);
-                                    // syntetic.kind = Kind.syntetic;
                                     syntetic_ = syntetic;
 
                                     try x.*.setAsParentTo(syntetic);
@@ -293,23 +292,14 @@ pub fn solvePosition(self: *Node, parents_: std.ArrayList(*TypeNode), allocator:
 
     if (parents.count() != 1) {
         // pure syntetic, no one reach this state yet
-        // const synteticName = try std.fmt.allocPrint(allocator, "syntetic{}", .{globalSynteticId});
-        // globalSynteticId += 1;
         const syntetic = try TypeNode.init(allocator, TypeNode.Kind.syntetic, self);
-        // syntetic.kind = .syntetic;
 
         var it = parents.keyIterator();
         while (it.next()) |parent| {
-            // std.debug.print("New syntetic was synthesized from: {s}\n", .{parent.*.of});
             try parent.*.setAsParentTo(syntetic);
         }
 
         try self.syntetics.append(syntetic);
-
-        // std.debug.print("this syntetic supers\n", .{});
-        // for (syntetic.parents.items) |super| {
-        //     std.debug.print("super: {s}\n", .{super.of});
-        // }
 
         return syntetic;
     }
@@ -347,35 +337,40 @@ pub fn solvePosition(self: *Node, parents_: std.ArrayList(*TypeNode), allocator:
 pub fn solveNominativePosition(current: *TypeNode, new: *TypeNode) EngineError!void {
     var pushedBelow = false;
 
-    for (current.childs.items) |sub| {
-        if (try tree.current.askSubtype(sub, new)) {
-            pushedBelow = true;
-            _ = try solveNominativePosition(sub, new);
-        }
-
-        // Or if it's syntatic typeNode (constraint defined)
-        // and substable for all top nodes of syntetic
-        // TODO: возможно придётся расщеплять синтетику, потому что не все её топ ноды могут быть старшими к текущей
-        // ??: опять же подходящие старшие будут поставлены выше текущий по другим путям
-        if (sub.isSyntetic()) {
-            pushedBelow = true;
-            for (sub.parents.items) |subParent| {
-                if (!(try tree.current.askSubtype(subParent, new))) {
-                    pushedBelow = false;
-                }
+    {
+        var currentChildsIt = current.childs.keyIterator();
+        while (currentChildsIt.next()) |sub| {
+            if (try tree.current.askSubtype(sub.*, new)) {
+                pushedBelow = true;
+                _ = try solveNominativePosition(sub.*, new);
             }
 
-            if (pushedBelow) {
-                _ = try solveNominativePosition(sub, new);
+            // Or if it's syntatic typeNode (constraint defined)
+            // and substable for all top nodes of syntetic
+            // TODO: возможно придётся расщеплять синтетику, потому что не все её топ ноды могут быть старшими к текущей
+            // ??: опять же подходящие старшие будут поставлены выше текущий по другим путям
+            if (sub.*.isSyntetic()) {
+                pushedBelow = true;
+                var subParentsIt = sub.*.parents.keyIterator();
+                while (subParentsIt.next()) |subParent| {
+                    if (!(try tree.current.askSubtype(subParent.*, new))) {
+                        pushedBelow = false;
+                    }
+                }
+
+                if (pushedBelow) {
+                    _ = try solveNominativePosition(sub.*, new);
+                }
             }
         }
     }
 
     if (!pushedBelow) {
-        for (current.childs.items) |sub| {
-            if (try tree.current.askSubtype(new, sub)) {
-                try new.setAsParentTo(sub);
-                current.removeChild(sub);
+        var currentChildsIt = current.childs.keyIterator();
+        while (currentChildsIt.next()) |sub| {
+            if (try tree.current.askSubtype(new, sub.*)) {
+                try new.setAsParentTo(sub.*);
+                current.removeChild(sub.*);
             }
         }
 

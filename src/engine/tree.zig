@@ -9,6 +9,7 @@ const utils = @import("utils.zig");
 const constants = @import("constants.zig");
 const defaultVariances = @import("variance.zig").defaultVariances;
 
+const AutoHashSet = utils.AutoHashSet;
 const EngineError = @import("error.zig").EngineError;
 const TypeC = @import("../query_parser.zig").TypeC;
 const Node = @import("Node.zig");
@@ -254,7 +255,7 @@ pub const Tree = struct {
         const inVariance = Variance.contravariant.x(defaultVariances.functionIn);
         const leafsX_starts = try self.head.searchWithVariance(in, inVariance, self.allocator);
 
-        var x_mirrors = std.AutoHashMap(Mirror, void).init(self.allocator);
+        var x_mirrors = AutoHashSet(Mirror).init(self.allocator);
         for (leafsX_starts.items) |x_start| {
             const x_startFollowingNode = try x_start.getFollowing(try utils.getBacklink(in), Following.Kind.arrow, self.allocator); // TOOD: check twice
             // std.debug.print("Mirror Walk: '{s}' and '{s}'\n", .{
@@ -294,7 +295,7 @@ pub const Tree = struct {
     pub fn extractAllDecls(self: *Tree, allocator: Allocator) !std.ArrayList(*Declaration) {
         const allDecls = try self.head.extractAllDecls(allocator);
 
-        var unique = std.AutoHashMap(*Declaration, void).init(allocator);
+        var unique = AutoHashSet(*Declaration).init(allocator);
         for (allDecls.items) |decl| {
             try unique.put(decl, {});
         }
@@ -312,7 +313,7 @@ pub const Tree = struct {
         if (self.server) |server| {
             return try self.cache.askSubtype(server, parent, child);
         } else {
-            return utils.defaultSubtype(try parent.name(), try child.name());
+            return utils.defaultSubtype(try parent.name(self.allocator), try child.name(self.allocator));
         }
     }
 };

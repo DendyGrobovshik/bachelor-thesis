@@ -7,6 +7,7 @@ const SegmentedList = @import("std").SegmentedList;
 const utils = @import("utils.zig");
 const main = @import("../main.zig");
 
+const AutoHashSet = utils.AutoHashSet;
 const EngineError = @import("error.zig").EngineError;
 const Declaration = @import("entities.zig").Declaration;
 const Node = @import("Node.zig");
@@ -41,8 +42,8 @@ kind: Kind,
 /// Direct neighbours, they can be in other Node(rly? - yes if function)
 ///
 /// It current TypeNode represent end of function (kind==closing)
-parents: std.ArrayList(*TypeNode),
-childs: std.ArrayList(*TypeNode),
+parents: AutoHashSet(*TypeNode),
+childs: AutoHashSet(*TypeNode),
 
 /// In which Node the current TypeNode is located.
 of: *Node,
@@ -53,8 +54,8 @@ pub fn init(allocator: Allocator, kind: Kind, of: *Node) EngineError!*TypeNode {
 
     this.* = .{
         .kind = kind,
-        .parents = std.ArrayList(*TypeNode).init(allocator),
-        .childs = std.ArrayList(*TypeNode).init(allocator),
+        .parents = AutoHashSet(*TypeNode).init(allocator),
+        .childs = AutoHashSet(*TypeNode).init(allocator),
         .of = of,
         .followings = std.ArrayList(*Following).init(allocator),
     };
@@ -64,13 +65,15 @@ pub fn init(allocator: Allocator, kind: Kind, of: *Node) EngineError!*TypeNode {
 
 /// Kind of cartesian product.
 /// Recursively returns pairs of equal TypeNodes of childs.
-pub fn findMirrorShards(self: *TypeNode, storage: *std.AutoHashMap(Shard, void), reflection: *TypeNode) EngineError!void {
+pub fn findMirrorShards(self: *TypeNode, storage: *AutoHashSet(Shard), reflection: *TypeNode, allocator: Allocator) EngineError!void {
     try storage.put(Shard{ .it = self, .reflection = reflection }, {});
 
-    for (self.childs.items) |selfChild| {
-        for (reflection.childs.items) |reflectionChild| {
-            if (try eql(selfChild, reflectionChild)) {
-                try findMirrorShards(selfChild, storage, reflectionChild);
+    var selfChildsIt = self.childs.keyIterator();
+    while (selfChildsIt.next()) |selfChild| {
+        var reflectionChildsIt = reflection.childs.keyIterator();
+        while (reflectionChildsIt.next()) |reflectionChild| {
+            if (try eql(selfChild.*, reflectionChild.*, allocator)) {
+                try findMirrorShards(selfChild.*, storage, reflectionChild.*, allocator);
             }
         }
     }
@@ -97,7 +100,7 @@ pub fn notEmpty(self: *TypeNode) bool {
         else => return true,
     }
 
-    if (self.parents.items.len > 1 or self.childs.items.len > 0) {
+    if (self.parents.count() > 1 or self.childs.count() > 0) {
         return true;
     }
 
@@ -106,28 +109,34 @@ pub fn notEmpty(self: *TypeNode) bool {
 
 pub fn setAsParentTo(parent: *TypeNode, child: *TypeNode) std.mem.Allocator.Error!void {
     // TODO: check if it is already present
-    try parent.childs.append(child);
-    try child.parents.append(parent);
+    try parent.childs.put(child, {});
+    try child.parents.put(parent, {});
 }
 
 // not atomic!!!
 // TODO: ensure that delete element is present
 pub fn removeChild(parent: *TypeNode, child: *TypeNode) void {
-    var childId: usize = 0;
-    for (0..parent.childs.items.len) |i| {
-        if (parent.childs.items[i] == child) {
-            childId = i;
-        }
-    }
-    _ = parent.childs.swapRemove(childId); // TODO: md use orderedRemove
+    // var childId: usize = 0;
+    // for (0..parent.childs.items.len) |i| {
+    //     if (parent.childs.items[i] == child) {
+    //         childId = i;
+    //     }
+    // }
+    // _ = parent.childs.swapRemove(childId); // TODO: md use orderedRemove
 
-    var parentId: usize = 0;
-    for (0..child.parents.items.len) |i| {
-        if (child.parents.items[i] == parent) {
-            parentId = i;
-        }
+    // var parentId: usize = 0;
+    // for (0..child.parents.items.len) |i| {
+    //     if (child.parents.items[i] == parent) {
+    //         parentId = i;
+    //     }
+    // }
+    // _ = child.parents.swapRemove(parentId);
+    const r1 = parent.childs.remove(child);
+    const r2 = child.parents.remove(parent);
+
+    if (!r1 or !r2) {
+        std.debug.panic("One of relations was not removed\n", .{});
     }
-    _ = child.parents.swapRemove(parentId);
 }
 
 pub fn getFollowing(self: *TypeNode, backlink: ?*TypeNode, kind: Following.Kind, allocator: Allocator) !*Following {
@@ -202,8 +211,9 @@ pub fn isGnominative(self: *TypeNode) bool {
 pub fn extractAllDecls(self: *TypeNode, allocator: Allocator) Allocator.Error!std.ArrayList(*Declaration) {
     var result = std.ArrayList(*Declaration).init(allocator);
 
-    for (self.childs.items) |child| {
-        try result.appendSlice((try extractAllDecls(child, allocator)).items);
+    var it = self.childs.keyIterator();
+    while (it.next()) |child| {
+        try result.appendSlice((try extractAllDecls(child.*, allocator)).items);
     }
 
     for (self.followings.items) |following| {
@@ -215,7 +225,7 @@ pub fn extractAllDecls(self: *TypeNode, allocator: Allocator) Allocator.Error!st
 
 // NOTE: top level variance is covariant
 pub fn getAllByVariance(self: *TypeNode, variance: Variance, allocator: Allocator) EngineError!std.ArrayList(*TypeNode) {
-    var typeNodes = std.AutoHashMap(*TypeNode, void).init(allocator);
+    var typeNodes = AutoHashSet(*TypeNode).init(allocator);
 
     // TODO: take care constraints
     switch (variance) {
@@ -245,23 +255,25 @@ pub fn getAllByVariance(self: *TypeNode, variance: Variance, allocator: Allocato
     return result;
 }
 
-pub fn getChildsRecursively(self: *TypeNode, storage: *std.AutoHashMap(*TypeNode, void)) Allocator.Error!void {
+pub fn getChildsRecursively(self: *TypeNode, storage: *AutoHashSet(*TypeNode)) Allocator.Error!void {
     try storage.put(self, {});
 
-    for (self.childs.items) |child| {
-        try getChildsRecursively(child, storage);
+    var it = self.childs.keyIterator();
+    while (it.next()) |child| {
+        try getChildsRecursively(child.*, storage);
     }
 }
 
-pub fn getParentsRecursively(self: *TypeNode, storage: *std.AutoHashMap(*TypeNode, void)) Allocator.Error!void {
+pub fn getParentsRecursively(self: *TypeNode, storage: *AutoHashSet(*TypeNode)) Allocator.Error!void {
     try storage.put(self, {});
 
-    for (self.parents.items) |parent| {
-        try getParentsRecursively(parent, storage);
+    var it = self.parents.keyIterator();
+    while (it.next()) |parent| {
+        try getParentsRecursively(parent.*, storage);
     }
 }
 
 // TODO: equality of names a bit expensive, but it now it's the only way to handle syntetic
-pub fn eql(self: *TypeNode, other: *TypeNode) Allocator.Error!bool {
-    return std.mem.eql(u8, try self.name(), try other.name());
+pub fn eql(self: *TypeNode, other: *TypeNode, allocator: Allocator) Allocator.Error!bool {
+    return std.mem.eql(u8, try self.name(allocator), try other.name(allocator));
 }
