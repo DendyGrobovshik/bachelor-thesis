@@ -528,11 +528,10 @@ pub fn searchHOF(self: *Node, nextType: *TypeC, variance: Variance, allocator: A
     return result;
 }
 
-pub fn extractAllDecls(self: *Node, allocator: Allocator) !std.ArrayList(*Declaration) {
-    var result = std.ArrayList(*Declaration).init(allocator);
+pub fn extractAllDecls(self: *Node, storage: *AutoHashSet(*Declaration)) Allocator.Error!void {
+    for (self.endings.items) |ending| {
+        try storage.put(ending, {});
+    }
 
-    try result.appendSlice(self.endings.items);
-    try result.appendSlice((try self.universal.extractAllDecls(allocator)).items);
-
-    return result;
+    try self.universal.extractAllDecls(storage);
 }

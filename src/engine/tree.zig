@@ -292,21 +292,11 @@ pub const Tree = struct {
         return result;
     }
 
-    pub fn extractAllDecls(self: *Tree, allocator: Allocator) !std.ArrayList(*Declaration) {
-        const allDecls = try self.head.extractAllDecls(allocator);
+    pub fn extractAllDecls(self: *Tree, allocator: Allocator) Allocator.Error!AutoHashSet(*Declaration) {
+        var decls = AutoHashSet(*Declaration).init(allocator);
+        try self.head.extractAllDecls(&decls);
 
-        var unique = AutoHashSet(*Declaration).init(allocator);
-        for (allDecls.items) |decl| {
-            try unique.put(decl, {});
-        }
-
-        var result = std.ArrayList(*Declaration).init(allocator);
-        var it = unique.keyIterator();
-        while (it.next()) |decl| {
-            try result.append(decl.*);
-        }
-
-        return result;
+        return decls;
     }
 
     pub fn askSubtype(self: *Tree, parent: *TypeNode, child: *TypeNode) EngineError!bool {

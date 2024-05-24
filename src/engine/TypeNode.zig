@@ -151,19 +151,15 @@ pub fn genericFollowing(self: *TypeNode) *Following { // TODO: check if it works
     unreachable;
 }
 
-pub fn extractAllDecls(self: *TypeNode, allocator: Allocator) Allocator.Error!std.ArrayList(*Declaration) {
-    var result = std.ArrayList(*Declaration).init(allocator);
-
+pub fn extractAllDecls(self: *TypeNode, storage: *AutoHashSet(*Declaration)) Allocator.Error!void {
     var it = self.childs.keyIterator();
     while (it.next()) |child| {
-        try result.appendSlice((try extractAllDecls(child.*, allocator)).items);
+        try extractAllDecls(child.*, storage);
     }
 
     for (self.followings.items) |following| {
-        try result.appendSlice((try following.to.extractAllDecls(allocator)).items);
+        try following.to.extractAllDecls(storage);
     }
-
-    return result;
 }
 
 // NOTE: top level variance is covariant
