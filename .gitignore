@@ -4,10 +4,7 @@ zig-out
 graph
 cache
 
-pages/*
-!pages/bachelor-thesis.pdf
-!pages/bachelor-thesis.tex
-!pages/itmo-student-thesis.cls
+*.DS_Store
 
 java_driver/node_modules/*
 java_driver/*
