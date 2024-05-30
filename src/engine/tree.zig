@@ -304,5 +304,3 @@ pub const Tree = struct {
         return decls;
     }
 };
-
-// TODO: add tests
