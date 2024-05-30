@@ -82,7 +82,7 @@ pub fn isEmpty(self: *Node) bool {
 
 pub fn draw(self: *Node, file: std.fs.File, allocator: Allocator) anyerror!void {
     if (self.isEmpty()) {
-        // return;
+        return;
     }
 
     const typeNodes = try self.notEmptyTypeNodes(allocator);

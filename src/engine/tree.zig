@@ -117,7 +117,11 @@ pub const Tree = struct {
     }
 
     // uses dot to visualize builded tree
-    pub fn doDraw(node: *Node, path: []const u8, allocator: Allocator) !void {
+    pub fn doDraw(node: *Node, path: []const u8, allocator_: Allocator) !void {
+        var arena = std.heap.ArenaAllocator.init(allocator_);
+        const allocator = arena.allocator();
+        defer arena.deinit();
+
         // std.debug.print("Start drawing tree\n", .{});
         const file = try std.fs.cwd().createFile(
             path,
