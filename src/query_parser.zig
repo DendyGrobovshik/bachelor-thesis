@@ -8,16 +8,17 @@ const main = @import("main.zig");
 
 const LOG = @import("config").logp;
 
+/// parse `str` according to query_grammar.txt
 pub fn parseQuery(allocator: Allocator, str: []const u8) Parser().Error!Query {
     var parser = try Parser().init(allocator, str);
+    defer parser.deinit();
+
     const query = parser.parse() catch |err| {
         parser.printError(err);
         return err;
     };
 
-    if (LOG) {
-        std.debug.print("PARSED Q: {}\n", .{query});
-    }
+    // std.debug.print("Query parsed: {}\n", .{query});
 
     return query;
 }
@@ -27,7 +28,7 @@ const Nominative = struct {
     generic: ?*TypeC = null,
     hadGeneric: bool = false,
 
-    // It is always null for concrete types. (TODO: ensure)
+    // It is always null for concrete types.
     // For generic type(which is current one-caps letter):
     // it updated only once when this node for the first time inserted in tree
     // if this generic will inserted in future, than in `following(to, backlink)`
@@ -55,15 +56,7 @@ const Nominative = struct {
     ) !void {
         try writer.print("{s}", .{this.name});
         if (this.generic) |ty| {
-            switch (ty.ty.*) { // TODO: this is a hack, should be fixed
-                .list => ty.ty.list.ordered = false,
-                else => {},
-            }
             try writer.print("<{s}>", .{ty});
-            switch (ty.ty.*) {
-                .list => ty.ty.list.ordered = true,
-                else => {},
-            }
         }
     }
 
@@ -307,8 +300,6 @@ pub const Constraint = struct {
         _: std.fmt.FormatOptions,
         writer: anytype,
     ) !void {
-        // TODO: print array with "&": https://stackoverflow.com/questions/77290888/can-i-sprintf-to-an-arraylist-in-zig
-
         const slice = this.superTypes.items;
         if (slice.len > 0) {
             try writer.print("{s} < ", .{this.ty});
@@ -383,6 +374,8 @@ pub fn Parser() type {
             std.mem.copyForwards(u8, strWithEnd[0..str.len], str);
             strWithEnd[str.len] = END;
 
+            // `T where T < G` updated to `T ␃here T < G`
+            // beacuse parsing has two stages
             if (std.mem.indexOf(u8, strWithEnd, "where")) |idx| {
                 strWithEnd[idx] = END;
             }
@@ -398,10 +391,10 @@ pub fn Parser() type {
         }
 
         pub fn deinit(self: *Self) void {
-            self.arena.deinit();
+            // self.arena.deinit();
+            self.typeMap.deinit();
         }
 
-        /// Debug only
         pub fn printError(self: *Self, err: Parser().Error) void {
             std.debug.print("Error happend: {} when parsing '{s}'\n", .{
                 err,
@@ -422,24 +415,20 @@ pub fn Parser() type {
         pub fn parse(self: *Self) Parser().Error!Query {
             const ty = try parseType(self);
 
-            const allocator = self.arena.allocator();
-
             var constraints: std.ArrayList(Constraint) = undefined;
             self.pos += 1;
             if (self.pos < self.str.len) {
                 self.pos += 4; // (w)here -> (EOF)here, so skip 4 chars "here"
                 constraints = try parseConstraints(self);
             } else {
-                constraints = std.ArrayList(Constraint).init(allocator);
+                constraints = std.ArrayList(Constraint).init(undefined);
             }
 
+            // assigning constraints to types
             for (constraints.items) |constraint| {
-                // only nominative constraints currently supproted
-                if (self.typeMap.get(constraint.ty.ty.nominative.name)) |tyc| {
-                    if (LOG) {
-                        std.debug.print("Constraint directly assigned to {s}\n", .{tyc});
-                    }
-                    try tyc.constraints.append(constraint);
+                // only constraints for nominative currently supported
+                if (self.typeMap.get(constraint.ty.ty.nominative.name)) |typec| {
+                    try typec.constraints.append(constraint);
                 }
             }
 
@@ -450,17 +439,12 @@ pub fn Parser() type {
         }
 
         pub fn parseType(self: *Self) Parser().Error!*TypeC {
-            if (LOG) {
-                std.debug.print("Parsing {s} ... {}\n", .{ self.str, self.pos });
-            }
+            // std.debug.print("query_parsed.parseType {s} ... {}\n", .{ self.str, self.pos });
             const allocator = self.arena.allocator();
 
             const baseType = try self.parseEndType();
 
             const nextToken = self.next();
-            if (LOG) {
-                std.debug.print("Parsing continuation... {}\n", .{nextToken});
-            }
             switch (nextToken) {
                 Token.arrow => {
                     const cont = try self.parseType();
@@ -542,12 +526,10 @@ pub fn Parser() type {
         }
 
         fn parseEndType(self: *Self) Parser().Error!*TypeC {
+            // std.debug.print("Parsing end type... {}\n", .{nextToken});
             const allocator = self.arena.allocator();
 
             var nextToken = self.next();
-            if (LOG) {
-                std.debug.print("Parsing end type... {}\n", .{nextToken});
-            }
             switch (nextToken) {
                 .char => {
                     if (nextToken.char == '!') {
@@ -872,7 +854,7 @@ test "lons list" {
 
     const actual = try std.fmt.allocPrint(arena.allocator(), "{}", .{ty});
 
-    try std.testing.expectEqualStrings("(A, B, C) -> A<[A, B, C]>", actual);
+    try std.testing.expectEqualStrings("(A, B, C) -> A<(A, B, C)>", actual);
 }
 
 test "list inside a list" {
@@ -950,7 +932,7 @@ test "complicated type 2" {
 
     const actual = try std.fmt.allocPrint(arena.allocator(), "{}", .{ty});
 
-    try std.testing.expectEqualStrings("((A, B), C) -> (A<[T, G]> -> ([A, B] -> (A<[T, (G, R)]> -> (B -> (C, D<T>)))))", actual);
+    try std.testing.expectEqualStrings("((A, B), C) -> (A<(T, G)> -> ([A, B] -> (A<(T, (G, R))> -> (B -> (C, D<T>)))))", actual);
 }
 
 test "complicated type with ~>" {
@@ -963,7 +945,7 @@ test "complicated type with ~>" {
 
     const actual = try std.fmt.allocPrint(arena.allocator(), "{}", .{ty});
 
-    try std.testing.expectEqualStrings("((A, B), C) ~> (A<[T, G]> -> ([A, B] -> (A<[T, G ~> R]> -> (B -> (C, D<T>)))))", actual);
+    try std.testing.expectEqualStrings("((A, B), C) ~> (A<(T, G)> -> ([A, B] -> (A<(T, G ~> R)> -> (B -> (C, D<T>)))))", actual);
 }
 
 test "function in generic ~>" {
@@ -976,7 +958,7 @@ test "function in generic ~>" {
 
     const actual = try std.fmt.allocPrint(arena.allocator(), "{}", .{ty});
 
-    try std.testing.expectEqualStrings("A<[D, A -> (B ~> C), B]>", actual);
+    try std.testing.expectEqualStrings("A<(D, A -> (B ~> C), B)>", actual);
 }
 
 test "simple constraint" {

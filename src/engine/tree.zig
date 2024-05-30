@@ -141,7 +141,6 @@ pub const Tree = struct {
 
         const pngPath = try std.fmt.allocPrint(allocator, "{s}.png", .{path});
 
-        // TODO: handle proper error handling
         const runResult = try std.ChildProcess.run(.{
             .allocator = allocator,
             .argv = &.{
@@ -182,8 +181,8 @@ pub const Tree = struct {
 
         // // TODO: this is a hack because some kind of miscompilation reuse same memory
         // // and all the declaration names are indistinguishable(last name are applied to all)
-        const newName = try std.fmt.allocPrint(self.allocator, "{s}", .{decl_.name});
-        const decl = try Declaration.init(self.allocator, newName, ty);
+        // const newName = try std.fmt.allocPrint(self.allocator, "{s}", .{decl_.name});
+        const decl = try Declaration.init(self.allocator, decl_.name, ty);
         decl.id = decl_.id;
         try following.to.endings.append(decl);
 
