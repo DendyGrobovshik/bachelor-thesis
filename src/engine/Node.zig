@@ -106,6 +106,7 @@ pub fn search(self: *Node, next: *TypeC, allocator: Allocator) EngineError!*Type
     return it.next().?.*;
 }
 
+// TODO: distinguish allocation while inserting
 // do exact search or insert if no present
 pub fn searchWithVariance(self: *Node, next: *TypeC, variance: Variance, storage: *AutoHashSet(*TypeNode), allocator: Allocator) EngineError!void {
     // std.debug.print("searchWithVariance: {s} {}\n", .{ next.ty, variance });

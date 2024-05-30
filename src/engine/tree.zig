@@ -250,47 +250,90 @@ pub const Tree = struct {
     // x: X' = f(in)
     // g: X -> Out
     // out: Out = g(x)
-    pub fn composeExpression(self: *Tree, in: *TypeC, out: *TypeC) EngineError!std.ArrayList(Expression) {
+    pub fn composeExpressions(self: *Tree, in: *TypeC, out: *TypeC) EngineError!AutoHashSet(Expression) {
         const inVariance = Variance.contravariant.x(defaultVariances.functionIn);
-
-        var leafsX_starts = AutoHashSet(*TypeNode).init(self.allocator);
-        try self.head.searchWithVariance(in, inVariance, &leafsX_starts, self.allocator);
-
-        var x_mirrors = AutoHashSet(Mirror).init(self.allocator);
-
-        var leafsX_startsIt = leafsX_starts.keyIterator();
-        while (leafsX_startsIt.next()) |x_start| {
-            const x_startFollowingNode = try x_start.*.getFollowing(try utils.getBacklink(in), Following.Kind.arrow, self.allocator); // TOOD: check twice
-            // std.debug.print("Mirror Walk: '{s}' and '{s}'\n", .{
-            //     try x_startFollowingNode.to.labelName(self.allocator),
-            //     try self.head.labelName(self.allocator),
-            // });
-            try x_startFollowingNode.to.mirrorWalk(self.head, &x_mirrors, self.allocator);
-        }
-
-        var result = std.ArrayList(Expression).init(self.allocator);
         const outVariance = Variance.covariant.x(defaultVariances.functionOut);
 
-        var x_mirrorsIt = x_mirrors.keyIterator();
-        while (x_mirrorsIt.next()) |mirror| {
+        const starts = try nodesBy(in, self.head, inVariance, self.allocator);
+
+        const mirrors = try getMirrors(&starts, self.head, self.allocator);
+
+        return try composeMirrors(&mirrors, out, outVariance, self.allocator);
+    }
+
+    /// return all nodes with path equal to `by` type which start in `startsIn` according to `variacne`
+    fn nodesBy(by: *TypeC, startsIn: *Node, variance: Variance, allocator: Allocator) EngineError!AutoHashSet(*Node) {
+        var leafsX_starts = AutoHashSet(*TypeNode).init(allocator);
+        try startsIn.searchWithVariance(by, variance, &leafsX_starts, allocator);
+
+        var result = AutoHashSet(*Node).init(allocator);
+
+        var it = leafsX_starts.keyIterator();
+        while (it.next()) |typeNode| {
+            const node = (try typeNode.*.getFollowing(try utils.getBacklink(by), Following.Kind.arrow, allocator)).to;
+            try result.put(node, {});
+        }
+
+        return result;
+    }
+
+    /// get mirrors with each of `starts` and `with`
+    fn getMirrors(starts: *const AutoHashSet(*Node), with: *Node, allocator: Allocator) EngineError!AutoHashSet(Mirror) {
+        var result = AutoHashSet(Mirror).init(allocator);
+
+        var it = starts.keyIterator();
+        while (it.next()) |start| {
+            // std.debug.print("Mirror Walk: '{s}' and '{s}'\n", .{
+            //     try x_start.*.labelName(allocator),
+            //     try self.head.labelName(allocator),
+            // });
+            try start.*.mirrorWalk(with, &result, allocator);
+        }
+
+        return result;
+    }
+
+    /// Compose expression: inner decls is from `it` of mirror,
+    ///  and outer decls is from continuation of `reflection` with `ending`
+    fn composeMirrors(
+        mirrors: *const AutoHashSet(Mirror),
+        ending: *TypeC,
+        variance: Variance,
+        allocator: Allocator,
+    ) EngineError!AutoHashSet(Expression) {
+        var result = AutoHashSet(Expression).init(allocator);
+
+        var it = mirrors.keyIterator();
+        while (it.next()) |mirror| {
             // std.debug.print("mirrors: '{s}' with {} decls, '{s}'\n", .{
-            //     try mirror.it.labelName(self.allocator),
+            //     try mirror.it.labelName(allocator),
             //     mirror.it.endings.items.len,
-            //     try mirror.reflection.labelName(self.allocator),
+            //     try mirror.reflection.labelName(allocator),
             // });
 
-            var leafsOut = AutoHashSet(*TypeNode).init(self.allocator);
-            try mirror.*.reflection.searchWithVariance(out, outVariance, &leafsOut, self.allocator);
-
-            const outerDecls = try self.getDeclsOfLeafs(out, &leafsOut);
+            const nodesOut = try nodesBy(ending, mirror.*.reflection, variance, allocator);
+            const outerDecls = try getDeclsOfNodes(&nodesOut, allocator);
 
             const innerDecls = mirror.*.it.endings;
 
             var outerDeclsIt = outerDecls.keyIterator();
             while (outerDeclsIt.next()) |outer| {
                 for (innerDecls.items) |inner| {
-                    try result.append(Expression{ .inner = inner, .outer = outer.* });
+                    try result.put(Expression{ .inner = inner, .outer = outer.* }, {});
                 }
+            }
+        }
+
+        return result;
+    }
+
+    fn getDeclsOfNodes(nodes: *const AutoHashSet(*Node), allocator: Allocator) Allocator.Error!AutoHashSet(*Declaration) {
+        var result = AutoHashSet(*Declaration).init(allocator);
+
+        var it = nodes.keyIterator();
+        while (it.next()) |node| {
+            for (node.*.endings.items) |decl| {
+                try result.put(decl, {});
             }
         }
 

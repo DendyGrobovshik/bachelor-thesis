@@ -1,6 +1,7 @@
 const std = @import("std");
 const Allocator = @import("std").mem.Allocator;
 
+const utils = @import("utils.zig");
 const queryParser = @import("../../query_parser.zig");
 const buildTree = @import("utils.zig").buildTree;
 
@@ -20,14 +21,12 @@ test "simple function compisition" {
 
     const in = try queryParser.parseQuery(allocator, "String");
     const out = try queryParser.parseQuery(allocator, "Bool");
-    const expressions = try tree.composeExpression(in.ty, out.ty);
+    const expressions = try tree.composeExpressions(in.ty, out.ty);
 
-    try std.testing.expectEqual(2, expressions.items.len);
+    try std.testing.expectEqual(2, expressions.count());
 
-    const firstExpr = try std.fmt.allocPrint(allocator, "{s}", .{expressions.items[0]});
-    try std.testing.expectEqualStrings("(g: Int -> Bool) ∘ (f: String -> Int)", firstExpr);
-    const secondExpr = try std.fmt.allocPrint(allocator, "{s}", .{expressions.items[1]});
-    try std.testing.expectEqualStrings("(g: Int -> Bool) ∘ (f2: String -> IntEven)", secondExpr);
+    try std.testing.expect(try utils.inExpressions("(g: Int -> Bool) ∘ (f: String -> Int)", expressions, allocator));
+    try std.testing.expect(try utils.inExpressions("(g: Int -> Bool) ∘ (f2: String -> IntEven)", expressions, allocator));
 }
 
 test "composition with generic parametrized nominative in between" {
@@ -42,12 +41,11 @@ test "composition with generic parametrized nominative in between" {
 
     const in = try queryParser.parseQuery(allocator, "Array<T>");
     const out = try queryParser.parseQuery(allocator, "Bool");
-    const expressions = try tree.composeExpression(in.ty, out.ty);
+    const expressions = try tree.composeExpressions(in.ty, out.ty);
 
-    try std.testing.expectEqual(1, expressions.items.len);
+    try std.testing.expectEqual(1, expressions.count());
 
-    const firstExpr = try std.fmt.allocPrint(allocator, "{s}", .{expressions.items[0]});
-    try std.testing.expectEqualStrings("(g: Collection<Int> -> Bool) ∘ (f: Array<T> -> Collection<Int>)", firstExpr);
+    try std.testing.expect(try utils.inExpressions("(g: Collection<Int> -> Bool) ∘ (f: Array<T> -> Collection<Int>)", expressions, allocator));
 }
 
 test "composition with generic with constraints in between" {
@@ -62,10 +60,9 @@ test "composition with generic with constraints in between" {
 
     const in = try queryParser.parseQuery(allocator, "Abc");
     const out = try queryParser.parseQuery(allocator, "Xyz");
-    const expressions = try tree.composeExpression(in.ty, out.ty);
+    const expressions = try tree.composeExpressions(in.ty, out.ty);
 
-    try std.testing.expectEqual(1, expressions.items.len);
+    try std.testing.expectEqual(1, expressions.count());
 
-    const firstExpr = try std.fmt.allocPrint(allocator, "{s}", .{expressions.items[0]});
-    try std.testing.expectEqualStrings("(g: T -> Xyz) ∘ (f: Abc -> T)", firstExpr);
+    try std.testing.expect(try utils.inExpressions("(g: T -> Xyz) ∘ (f: Abc -> T)", expressions, allocator));
 }
