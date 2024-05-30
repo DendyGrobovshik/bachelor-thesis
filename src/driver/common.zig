@@ -14,6 +14,15 @@ pub const RawDeclaration = struct {
     index: usize = 0,
     name: []const u8,
     ty: []const u8,
+
+    pub fn format(
+        this: RawDeclaration,
+        comptime _: []const u8,
+        _: std.fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
+        try writer.print("{s}: {s}", .{ this.name, this.ty });
+    }
 };
 
 pub const SubtypeQuestion = struct {
@@ -77,7 +86,7 @@ pub inline fn read(comptime This: type, self: *This, comptime T: type) ServerErr
     }
 
     const jsonLength = try std.fmt.parseInt(usize, &buffer, 10);
-    std.debug.print("JSON LENGTH: {}\n", .{jsonLength});
+    // std.debug.print("JSON LENGTH: {}\n", .{jsonLength});
 
     var json = try self.allocator.alloc(u8, jsonLength);
 
@@ -86,7 +95,7 @@ pub inline fn read(comptime This: type, self: *This, comptime T: type) ServerErr
         readed = readed + try self.stream.read(json[readed..]);
     }
 
-    std.debug.print("JSON: '{s}'\n", .{json});
+    // std.debug.print("JSON: '{s}'\n", .{json});
 
     const parsed = try std.json.parseFromSlice(
         T,

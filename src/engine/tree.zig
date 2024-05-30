@@ -113,8 +113,16 @@ pub const Tree = struct {
         // TODO:
     }
 
-    // uses dot to visualize builded tree
     pub fn draw(self: *const Tree, path: []const u8, allocator: Allocator) !void {
+        try doDraw(self.head, path, allocator);
+    }
+
+    pub fn drawCache(self: *const Tree, path: []const u8, allocator: Allocator) !void {
+        try doDraw(self.cache.head, path, allocator);
+    }
+
+    // uses dot to visualize builded tree
+    pub fn doDraw(node: *Node, path: []const u8, allocator: Allocator) !void {
         if (LOG) {
             std.debug.print("Start drawing tree\n", .{});
         }
@@ -126,8 +134,8 @@ pub const Tree = struct {
 
         try file.writeAll("digraph g {\n");
         try file.writeAll("compound = true;\n");
-        //try file.writeAll("rankdir=LR;");
-        try self.head.draw(file, allocator);
+        // try file.writeAll("rankdir=LR;");
+        try node.draw(file, allocator);
 
         try file.writeAll("}\n");
 
@@ -144,8 +152,9 @@ pub const Tree = struct {
         // std.debug.print("{any}\n", .{runResult.term});
         switch (runResult.term) {
             .Exited => if (runResult.term.Exited != 0) {
-                std.debug.print("Executing 'dot' return non zero code={}, stderr:\n> {s}\n", .{
+                std.debug.print("Executing 'dot' return non zero code={}, path={s} stderr:\n> {s}\n", .{
                     runResult.term.Exited,
+                    path,
                     runResult.stderr,
                 });
                 return EngineError.ErrorWhileExecutingDot;
@@ -153,9 +162,7 @@ pub const Tree = struct {
             else => return EngineError.ErrorWhileExecutingDot,
         }
 
-        if (LOG) {
-            std.debug.print("TREE DRAWN...\n", .{});
-        }
+        // std.debug.print("TREE DRAWN...\n", .{});
     }
 
     pub fn sweetLeaf(self: *Tree, typec: *TypeC, allocator: Allocator) EngineError!*TypeNode {
@@ -164,12 +171,12 @@ pub const Tree = struct {
 
     // no comma + generic transformed to func
     pub fn addDeclaration(self: *Tree, decl_: *Declaration) EngineError!void {
-        if (LOG) {
-            std.debug.print("======ADDING DECLARATION... '{s}' with type '{s}' and index={}\n", .{ decl_.name, decl_.ty, decl_.id });
-        }
+        // std.debug.print("======ADDING DECLARATION... '{s}' with type '{s}' and index={}\n", .{ decl_.name, decl_.ty, decl_.id });
 
         const ty = utils.orderTypeParameters(decl_.ty, self.allocator);
         const leaf = try self.sweetLeaf(ty, self.allocator);
+
+        _ = try leaf.name(self.allocator);
 
         const following = try leaf.getFollowing(try utils.getBacklink(ty), Following.Kind.arrow, self.allocator);
 
@@ -180,49 +187,52 @@ pub const Tree = struct {
         decl.id = decl_.id;
         try following.to.endings.append(decl);
 
-        if (LOG) {
-            std.debug.print("=====DECLARATION ADDED\n", .{});
-        }
+        // std.debug.print("=====DECLARATION ADDED\n", .{});
     }
 
     /// exact search
-    pub fn findDeclarations(self: *Tree, typec_: *TypeC) EngineError!std.ArrayList(*Declaration) {
+    pub fn findDeclarations(self: *Tree, typec_: *TypeC) EngineError!AutoHashSet(*Declaration) {
         return self.findDeclarationsWithVariants(typec_, Variance.invariant);
     }
 
     // TODO: prove that they are unique
-    pub fn findDeclarationsWithVariants(self: *Tree, typec_: *TypeC, variance: Variance) EngineError!std.ArrayList(*Declaration) {
-        if (LOG) {
-            std.debug.print("Searcing declaration...\n", .{});
-        }
-
+    pub fn findDeclarationsWithVariants(self: *Tree, typec_: *TypeC, variance: Variance) EngineError!AutoHashSet(*Declaration) {
         const typec = utils.orderTypeParameters(typec_, self.allocator);
-        const leafs = try self.head.searchWithVariance(typec, variance, self.allocator);
 
-        var result = try self.getDeclsOfLeafs(typec, leafs);
+        var leafs = AutoHashSet(*TypeNode).init(self.allocator);
+        try self.head.searchWithVariance(typec, variance, &leafs, self.allocator);
+
+        var result = try self.getDeclsOfLeafs(typec, &leafs);
 
         if (utils.canBeDecurried(typec)) { // TODO: add check "if here is available vacancies"
             const decurried = try utils.decurryType(self.allocator, typec);
             const ordered = utils.orderTypeParameters(decurried, self.allocator);
 
-            const leafs2 = try self.head.searchWithVariance(ordered, variance, self.allocator);
-            for (leafs2.items) |leaf2| {
-                const following2 = try leaf2.getFollowing(try utils.getBacklink(ordered), Following.Kind.arrow, self.allocator);
+            var leafs2 = AutoHashSet(*TypeNode).init(self.allocator);
+            try self.head.searchWithVariance(ordered, variance, &leafs2, self.allocator);
+            var leafs2It = leafs2.keyIterator();
+            while (leafs2It.next()) |leaf2| {
+                const following2 = try leaf2.*.getFollowing(try utils.getBacklink(ordered), Following.Kind.arrow, self.allocator);
 
-                try result.appendSlice(following2.to.endings.items);
+                for (following2.to.endings.items) |decl| {
+                    try result.put(decl, {});
+                }
             }
         }
 
         return result;
     }
 
-    fn getDeclsOfLeafs(self: *Tree, typec: *TypeC, leafs: std.ArrayList(*TypeNode)) EngineError!std.ArrayList(*Declaration) {
-        var result = std.ArrayList(*Declaration).init(self.allocator);
+    fn getDeclsOfLeafs(self: *Tree, typec: *TypeC, leafs: *AutoHashSet(*TypeNode)) EngineError!AutoHashSet(*Declaration) {
+        var result = AutoHashSet(*Declaration).init(self.allocator);
 
-        for (leafs.items) |leaf| {
-            const declsOfLeaf = try self.getDeclsOfLeaf(leaf, typec);
+        var leafsIt = leafs.keyIterator();
+        while (leafsIt.next()) |leaf| {
+            const declsOfLeaf = try self.getDeclsOfLeaf(leaf.*, typec);
 
-            try result.appendSlice(declsOfLeaf.items);
+            for (declsOfLeaf.items) |decl| {
+                try result.put(decl, {});
+            }
         }
 
         return result;
@@ -253,11 +263,15 @@ pub const Tree = struct {
     // out: Out = g(x)
     pub fn composeExpression(self: *Tree, in: *TypeC, out: *TypeC) EngineError!std.ArrayList(Expression) {
         const inVariance = Variance.contravariant.x(defaultVariances.functionIn);
-        const leafsX_starts = try self.head.searchWithVariance(in, inVariance, self.allocator);
+
+        var leafsX_starts = AutoHashSet(*TypeNode).init(self.allocator);
+        try self.head.searchWithVariance(in, inVariance, &leafsX_starts, self.allocator);
 
         var x_mirrors = AutoHashSet(Mirror).init(self.allocator);
-        for (leafsX_starts.items) |x_start| {
-            const x_startFollowingNode = try x_start.getFollowing(try utils.getBacklink(in), Following.Kind.arrow, self.allocator); // TOOD: check twice
+
+        var leafsX_startsIt = leafsX_starts.keyIterator();
+        while (leafsX_startsIt.next()) |x_start| {
+            const x_startFollowingNode = try x_start.*.getFollowing(try utils.getBacklink(in), Following.Kind.arrow, self.allocator); // TOOD: check twice
             // std.debug.print("Mirror Walk: '{s}' and '{s}'\n", .{
             //     try x_startFollowingNode.to.labelName(self.allocator),
             //     try self.head.labelName(self.allocator),
@@ -276,15 +290,17 @@ pub const Tree = struct {
             //     try mirror.reflection.labelName(self.allocator),
             // });
 
-            const leafsOut = try mirror.*.reflection.searchWithVariance(out, outVariance, self.allocator);
+            var leafsOut = AutoHashSet(*TypeNode).init(self.allocator);
+            try mirror.*.reflection.searchWithVariance(out, outVariance, &leafsOut, self.allocator);
 
-            const outerDecls = try self.getDeclsOfLeafs(out, leafsOut);
+            const outerDecls = try self.getDeclsOfLeafs(out, &leafsOut);
 
             const innerDecls = mirror.*.it.endings;
 
-            for (outerDecls.items) |outer| {
+            var outerDeclsIt = outerDecls.keyIterator();
+            while (outerDeclsIt.next()) |outer| {
                 for (innerDecls.items) |inner| {
-                    try result.append(Expression{ .inner = inner, .outer = outer });
+                    try result.append(Expression{ .inner = inner, .outer = outer.* });
                 }
             }
         }
@@ -297,14 +313,6 @@ pub const Tree = struct {
         try self.head.extractAllDecls(&decls);
 
         return decls;
-    }
-
-    pub fn askSubtype(self: *Tree, parent: *TypeNode, child: *TypeNode) EngineError!bool {
-        if (self.server) |server| {
-            return try self.cache.askSubtype(server, parent, child);
-        } else {
-            return utils.defaultSubtype(try parent.name(self.allocator), try child.name(self.allocator));
-        }
     }
 };
 

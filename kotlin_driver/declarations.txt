@@ -1,0 +1,100 @@
+addSuppressed: (Throwable, Throwable) -> Unit
+also: (T, ((T)->Unit)) -> T
+arrayOf: (T) -> Array<T>
+assert: (Boolean) -> Unit
+assert: (Boolean, (()->Any)) -> Unit
+AutoCloseable: ((()->Unit)) -> AutoCloseable
+booleanArrayOf: (Boolean) -> BooleanArray
+byteArrayOf: (Byte) -> ByteArray
+Char: (Int) -> Char
+Char: (UShort) -> Char
+charArrayOf: (Char) -> CharArray
+check: (Boolean) -> Unit
+check: (Boolean, (()->Any)) -> Unit
+countLeadingZeroBits: (Byte) -> Int
+countLeadingZeroBits: (Short) -> Int
+countLeadingZeroBits: (UInt) -> Int
+countLeadingZeroBits: (ULong) -> Int
+countLeadingZeroBits: (UByte) -> Int
+countLeadingZeroBits: (UShort) -> Int
+countLeadingZeroBits: (Int) -> Int
+countLeadingZeroBits: (Long) -> Int
+countOneBits: (Byte) -> Int
+countOneBits: (Short) -> Int
+countOneBits: (UInt) -> Int
+countOneBits: (ULong) -> Int
+countOneBits: (UByte) -> Int
+countOneBits: (UShort) -> Int
+countOneBits: (Int) -> Int
+countOneBits: (Long) -> Int
+countTrailingZeroBits: (Byte) -> Int
+countTrailingZeroBits: (Short) -> Int
+countTrailingZeroBits: (UInt) -> Int
+countTrailingZeroBits: (ULong) -> Int
+countTrailingZeroBits: (UByte) -> Int
+countTrailingZeroBits: (UShort) -> Int
+countTrailingZeroBits: (Int) -> Int
+countTrailingZeroBits: (Long) -> Int
+doubleArrayOf: (Double) -> DoubleArray
+emptyArray: (Unit) -> Array<T>
+enumValueOf: (String) -> T
+enumValues: (Unit) -> Array<T>
+error: (Any) -> Nothing
+floatArrayOf: (Float) -> FloatArray
+floorDiv: (Byte, Byte) -> Int
+floorDiv: (Byte, Short) -> Int
+floorDiv: (Byte, Int) -> Int
+floorDiv: (Byte, Long) -> Long
+floorDiv: (Short, Byte) -> Int
+floorDiv: (Short, Short) -> Int
+floorDiv: (Short, Int) -> Int
+floorDiv: (Short, Long) -> Long
+floorDiv: (Int, Byte) -> Int
+floorDiv: (Int, Short) -> Int
+floorDiv: (Int, Int) -> Int
+floorDiv: (Int, Long) -> Long
+floorDiv: (Long, Byte) -> Long
+floorDiv: (Long, Short) -> Long
+floorDiv: (Long, Int) -> Long
+floorDiv: (Long, Long) -> Long
+getOrThrow: (Result<T>) -> T
+intArrayOf: (Int) -> IntArray
+isFinite: (Double) -> Boolean
+isFinite: (Float) -> Boolean
+isInfinite: (Double) -> Boolean
+isInfinite: (Float) -> Boolean
+isNaN: (Double) -> Boolean
+isNaN: (Float) -> Boolean
+lazy: ((()->T)) -> Lazy<T>
+lazy: (LazyThreadSafetyMode, (()->T)) -> Lazy<T>
+lazyOf: (T) -> Lazy<T>
+let: (T, ((T)->R)) -> R
+longArrayOf: (Long) -> LongArray
+mod: (Byte, Byte) -> Byte
+mod: (Byte, Short) -> Short
+mod: (Byte, Int) -> Int
+mod: (Byte, Long) -> Long
+mod: (Short, Byte) -> Byte
+mod: (Short, Short) -> Short
+mod: (Short, Int) -> Int
+mod: (Short, Long) -> Long
+mod: (Int, Byte) -> Byte
+mod: (Int, Short) -> Short
+mod: (Int, Int) -> Int
+mod: (Int, Long) -> Long
+mod: (Long, Byte) -> Byte
+mod: (Long, Short) -> Short
+mod: (Long, Int) -> Int
+mod: (Long, Long) -> Long
+mod: (Float, Float) -> Float
+mod: (Float, Double) -> Double
+mod: (Double, Float) -> Double
+mod: (Double, Double) -> Double
+printStackTrace: (Throwable, PrintWriter) -> Unit
+printStackTrace: (Throwable, PrintStream) -> Unit
+printStackTrace: (Throwable) -> Unit
+repeat: (Int, ((Int)->Unit)) -> Unit
+require: (Boolean) -> Unit
+require: (Boolean, (()->Any)) -> Unit
+rotateLeft: (Byte, Int) -> Byte
+rotateLeft: (Short, Int) -> Short

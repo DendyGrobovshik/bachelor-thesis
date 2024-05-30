@@ -2,12 +2,13 @@ const std = @import("std");
 const Allocator = @import("std").mem.Allocator;
 
 const main = @import("../main.zig");
+const utils = @import("utils.zig");
+
 const Node = @import("Node.zig");
 const TypeNode = @import("TypeNode.zig");
 const constants = @import("constants.zig");
-const utils = @import("utils.zig");
 
-pub fn byId(self: *Node) Allocator.Error![]const u8 {
+pub fn byId(self: *Node, allocator: Allocator) Allocator.Error![]const u8 {
     var result: usize = 0;
 
     for (self.by.followings.items, 0..) |following, i| {
@@ -16,7 +17,7 @@ pub fn byId(self: *Node) Allocator.Error![]const u8 {
         }
     }
 
-    return try std.fmt.allocPrint(main.gallocator, "{}", .{result});
+    return try std.fmt.allocPrint(allocator, "{}", .{result});
 }
 
 pub fn notEmptyTypeNodes(self: *Node, allocator: Allocator) anyerror!std.ArrayList(*TypeNode) {
@@ -53,7 +54,7 @@ pub fn fullPathName(self: *Node, allocator: Allocator) Allocator.Error![]const u
 
     return try std.fmt.allocPrint(allocator, "{s}{s}", .{
         try self.by.fullPathName(allocator),
-        try self.byId(),
+        try self.byId(allocator),
     });
 }
 
@@ -98,7 +99,11 @@ pub fn draw(self: *Node, file: std.fs.File, allocator: Allocator) anyerror!void 
     }));
 
     for (self.endings.items) |decl| {
-        try file.writeAll(try std.fmt.allocPrint(allocator, "{s}[color=darkgreen,style=filled,shape=signature];\n", .{decl.name}));
+        // NOTE: keep in mind 'decl' prefix
+        try file.writeAll(try std.fmt.allocPrint(allocator, "decl{s}[label={s},color=darkgreen,style=filled,shape=signature];\n", .{
+            decl.name,
+            decl.name,
+        }));
     }
 
     for (typeNodes.items) |typeNode| {
@@ -112,7 +117,7 @@ pub fn draw(self: *Node, file: std.fs.File, allocator: Allocator) anyerror!void 
     }
 }
 
-pub fn getTypeInAngles(node: *Node, allocator: Allocator) ![]const u8 {
+pub fn getTypeInAngles(node: *Node, allocator: Allocator) Allocator.Error![]const u8 {
     // it collect type until matching opening node
     // TODO: here is cringe idea: suffix = prefixsuffix - prefix
     const presuf = try node.labelName(allocator);

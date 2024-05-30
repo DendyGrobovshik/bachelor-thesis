@@ -1,12 +1,18 @@
 zig-cache
 zig-out
 
+graph
+cache
+
 pages/*
 !pages/bachelor-thesis.pdf
 !pages/bachelor-thesis.tex
 !pages/itmo-student-thesis.cls
 
 java_driver/node_modules/*
+java_driver/*
 ts_driver/node_modules/*
+kotlin_driver/node_modules/*
+koltin_driver/declarations.txt
 
 src/language/*

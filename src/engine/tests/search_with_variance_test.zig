@@ -25,19 +25,19 @@ test "function output variance in covariant" {
 
         const decls = try searchIndex.findDeclarationsWithVariants(ty.ty, Variance.covariant);
 
-        try std.testing.expectEqual(2, decls.items.len);
+        try std.testing.expectEqual(2, decls.count());
 
-        try std.testing.expect(utils.inArrayOfDecls("exact", decls));
-        try std.testing.expect(utils.inArrayOfDecls("yes", decls));
+        try std.testing.expect(utils.inDecls("exact", decls));
+        try std.testing.expect(utils.inDecls("yes", decls));
     }
 
     {
         const ty = try queryParser.parseQuery(allocator, "Int -> Bool");
         const decls = try searchIndex.findDeclarations(ty.ty);
 
-        try std.testing.expectEqual(1, decls.items.len);
+        try std.testing.expectEqual(1, decls.count());
 
-        try std.testing.expectEqualStrings("no", decls.items[0].name);
+        try std.testing.expect(utils.inDecls("no", decls));
     }
 }
 
@@ -58,20 +58,20 @@ test "function input is contravariant" {
 
         const decls = try searchIndex.findDeclarationsWithVariants(ty.ty, Variance.covariant);
 
-        try std.testing.expectEqual(3, decls.items.len);
+        try std.testing.expectEqual(3, decls.count());
 
-        try std.testing.expect(utils.inArrayOfDecls("exact", decls));
-        try std.testing.expect(utils.inArrayOfDecls("yes", decls));
-        try std.testing.expect(utils.inArrayOfDecls("yes2", decls));
+        try std.testing.expect(utils.inDecls("exact", decls));
+        try std.testing.expect(utils.inDecls("yes", decls));
+        try std.testing.expect(utils.inDecls("yes2", decls));
     }
 
     {
         const ty = try queryParser.parseQuery(allocator, "Int -> Bool");
         const decls = try searchIndex.findDeclarations(ty.ty);
 
-        try std.testing.expectEqual(1, decls.items.len);
+        try std.testing.expectEqual(1, decls.count());
 
-        try std.testing.expectEqualStrings("no", decls.items[0].name);
+        try std.testing.expect(utils.inDecls("no", decls));
     }
 }
 
@@ -94,13 +94,13 @@ test "function input variance applies for all types" {
 
         const decls = try searchIndex.findDeclarationsWithVariants(ty.ty, Variance.covariant);
 
-        try std.testing.expectEqual(5, decls.items.len);
+        try std.testing.expectEqual(5, decls.count());
 
-        try std.testing.expect(utils.inArrayOfDecls("exact", decls));
-        try std.testing.expect(utils.inArrayOfDecls("yes", decls));
-        try std.testing.expect(utils.inArrayOfDecls("yes2", decls));
-        try std.testing.expect(utils.inArrayOfDecls("yes3", decls));
-        try std.testing.expect(utils.inArrayOfDecls("yes4", decls));
+        try std.testing.expect(utils.inDecls("exact", decls));
+        try std.testing.expect(utils.inDecls("yes", decls));
+        try std.testing.expect(utils.inDecls("yes2", decls));
+        try std.testing.expect(utils.inDecls("yes3", decls));
+        try std.testing.expect(utils.inDecls("yes4", decls));
     }
 }
 
@@ -120,8 +120,9 @@ test "generics invariant by default" {
         const query = try queryParser.parseQuery(allocator, rawDecl.ty);
         const decls = try searchIndex.findDeclarations(query.ty);
 
-        try std.testing.expectEqual(1, decls.items.len);
-        try std.testing.expectEqualStrings(rawDecl.name, decls.items[0].name);
+        try std.testing.expectEqual(1, decls.count());
+        var it = decls.keyIterator();
+        try std.testing.expectEqualStrings(rawDecl.name, it.next().?.*.name);
     }
 }
 
@@ -144,11 +145,11 @@ test "lists are covariant by default" {
 
         const decls = try searchIndex.findDeclarationsWithVariants(ty.ty, Variance.covariant);
 
-        try std.testing.expectEqual(4, decls.items.len);
+        try std.testing.expectEqual(4, decls.count());
 
-        try std.testing.expect(utils.inArrayOfDecls("exact", decls));
-        try std.testing.expect(utils.inArrayOfDecls("yes1", decls));
-        try std.testing.expect(utils.inArrayOfDecls("yes2", decls));
-        try std.testing.expect(utils.inArrayOfDecls("yes3", decls));
+        try std.testing.expect(utils.inDecls("exact", decls));
+        try std.testing.expect(utils.inDecls("yes1", decls));
+        try std.testing.expect(utils.inDecls("yes2", decls));
+        try std.testing.expect(utils.inDecls("yes3", decls));
     }
 }

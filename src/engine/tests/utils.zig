@@ -5,6 +5,7 @@ const queryParser = @import("../../query_parser.zig");
 
 const Tree = @import("../tree.zig").Tree;
 const Declaration = @import("../entities.zig").Declaration;
+const AutoHashSet = @import("../utils.zig").AutoHashSet;
 
 pub const RawDecl = struct {
     ty: []const u8,
@@ -29,10 +30,11 @@ pub fn buildTree(rawDecls: []const RawDecl, allocator: Allocator) !*Tree {
     return tree;
 }
 
-pub fn inArrayOfDecls(name: []const u8, decls: std.ArrayList(*Declaration)) bool {
+pub fn inDecls(name: []const u8, decls: AutoHashSet(*Declaration)) bool {
     var in = false;
-    for (decls.items) |decl| {
-        if (std.mem.eql(u8, decl.name, name)) {
+    var declsIt = decls.keyIterator();
+    while (declsIt.next()) |decl| {
+        if (std.mem.eql(u8, decl.*.name, name)) {
             in = true;
         }
     }

@@ -17,7 +17,7 @@ pub const Following = struct {
     backlink: ?*TypeNode, // same as de Bruijn index (helps to disinguish generics)
     kind: Kind = Kind.arrow,
 
-    pub fn init(allocator: Allocator, of: *TypeNode, backlink: ?*TypeNode, kind: Kind) EngineError!*Following {
+    pub fn init(allocator: Allocator, of: *TypeNode, backlink: ?*TypeNode, kind: Kind) Allocator.Error!*Following {
         const to = try Node.init(allocator, of);
         const self = try allocator.create(Following);
 

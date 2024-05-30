@@ -210,7 +210,7 @@ pub fn getBacklink(ty: *TypeC) EngineError!?*TypeNode {
     switch (lastType.ty.*) {
         .nominative => return lastType.ty.nominative.typeNode,
         .list => return null, // TODO: idk what should be here
-        else => return EngineError.NotYetSupported,
+        .function => return null,
     }
 }
 
@@ -358,6 +358,7 @@ pub fn decurryType(allocator: Allocator, typec_: *TypeC) !*TypeC {
 }
 
 pub fn defaultSubtype(parent: []const u8, child: []const u8) bool {
+    // std.debug.print("utils.defaultSubtype: '{s}' < '{s}'\n", .{ child, parent });
     if (std.mem.eql(u8, parent, "U")) {
         return true;
     }
@@ -369,6 +370,15 @@ pub fn defaultSubtype(parent: []const u8, child: []const u8) bool {
         .{ "Int", "IntEven" },
         .{ "Printable", "IntEven" },
         .{ "Printable", "Collection" },
+        .{ "IntEven", "SubOfThree" },
+        .{ "String", "SubOfThree" },
+        .{ "Printable", "SubOfThree" },
+        .{ "An", "AnBnCn" },
+        .{ "Bn", "AnBnCn" },
+        .{ "Cn", "AnBnCn" },
+        .{ "An", "AnDn" },
+        .{ "Dn", "AnDn" },
+        .{ "An", "Yn" },
     };
 
     for (pairs) |pair| {
@@ -378,4 +388,41 @@ pub fn defaultSubtype(parent: []const u8, child: []const u8) bool {
     }
 
     return false;
+}
+
+pub fn isSubset(comptime T: type, subset: *AutoHashSet(T), superset: *AutoHashSet(T)) bool {
+    var subsetIt = subset.keyIterator();
+    while (subsetIt.next()) |sub| {
+        if (!superset.contains(sub.*)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+pub fn setIntersection(comptime T: type, x: *AutoHashSet(T), y: *AutoHashSet(T), allocator: Allocator) Allocator.Error!AutoHashSet(T) {
+    var result = AutoHashSet(*TypeNode).init(allocator);
+
+    var it = x.keyIterator();
+    while (it.next()) |xEl| {
+        if (y.contains(xEl.*)) {
+            try result.put(xEl.*, {});
+        }
+    }
+
+    return result;
+}
+
+pub fn setDifference(comptime T: type, set: *AutoHashSet(T), subset: *AutoHashSet(T), allocator: Allocator) Allocator.Error!AutoHashSet(T) {
+    var result = AutoHashSet(*TypeNode).init(allocator);
+
+    var it = set.keyIterator();
+    while (it.next()) |el| {
+        if (!subset.contains(el.*)) {
+            try result.put(el, {});
+        }
+    }
+
+    return result;
 }

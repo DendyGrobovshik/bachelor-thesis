@@ -1,0 +1,11 @@
+T_AnBn: T where T < An & Bn
+T_AnCn: T where T < Cn & An
+T_CnDn: T where T < Cn & Dn
+AnDn : AnDn
+T_AnDn : T where T < An & Dn
+AnBnCn: AnBnCn
+T_AnBnCn: T where T < An & Bn & Cn
+T_CnT_AnDn : T where T < AnDn & Cn
+T_AnCnDn : T where T < An & Cn & Dn
+Yn : Yn
+X : Array<Array<T>>

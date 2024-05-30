@@ -22,9 +22,11 @@ pub const Server = struct {
     pub const Error = error{
         CanNotDetectJsonSize,
         UnexpectedMessage,
+        CanNotCheckSubtyping,
     } || queryParser.Parser().Error || std.mem.Allocator.Error || std.posix.WriteError ||
         std.posix.ReadError || std.fmt.ParseIntError || std.posix.AcceptError ||
-        std.net.Address.ListenError || std.json.ParseError(std.json.Scanner);
+        std.net.Address.ListenError || std.json.ParseError(std.json.Scanner) ||
+        std.fs.File.OpenError || std.ChildProcess.RunError || std.Thread.SpawnError;
 
     pub const IP: [4]u8 = .{ 127, 0, 0, 1 };
     pub var PORT: u16 = 4000;
@@ -116,10 +118,10 @@ pub const Server = struct {
         std.debug.print("Server: tree builded in {}\n", .{std.fmt.fmtDuration(timer.read())});
     }
 
-    pub fn askSubtype(self: *Server, parent: *TypeNode, child: *TypeNode) Error!bool {
+    pub fn isSubtype(self: *Server, child: *TypeNode, parent: *TypeNode) Error!bool {
         const question = SubtypeQuestion{
-            .parent = try parent.name(self.allocator),
-            .child = try child.name(self.allocator),
+            .parent = try parent.originalTypeName(self.allocator),
+            .child = try child.originalTypeName(self.allocator),
         };
 
         try self.write(Message, Message{ .subtype = question });
@@ -143,8 +145,9 @@ pub const Server = struct {
                     _ = try self.write(Message, .{ .status = Status.finished }); // finishing asking sutype questions
 
                     var declIds = std.ArrayList(usize).init(self.allocator);
-                    for (candidates.items) |candidate| {
-                        try declIds.append(candidate.id);
+                    var candidatesIt = candidates.keyIterator();
+                    while (candidatesIt.next()) |candidate| {
+                        try declIds.append(candidate.*.id);
                     }
 
                     try self.write(Message, Message{ .declIds = declIds.items });

@@ -6,6 +6,7 @@ const SegmentedList = @import("std").SegmentedList;
 
 const utils = @import("utils.zig");
 const main = @import("../main.zig");
+const tree = @import("tree.zig");
 
 const AutoHashSet = utils.AutoHashSet;
 const EngineError = @import("error.zig").EngineError;
@@ -19,9 +20,27 @@ const FollowingShard = @import("entities.zig").FollowingShard;
 
 pub usingnamespace @import("TypeNode_printing.zig");
 
+// TypeNode represents type.
+// Connected TypeNodes represent a subtyping graph.
+// Universal is a supertype of any other.
+// Subtyping graph is Partially ordered set. Relation is subtyping relation.
+// Subtyping graph dynamically changes dynamically, but it must always be in consistent state.
+// Consitant state - for any 2 TypeNode real relations(whether and how they are ordered or not) can be determined from the graph.
+
+// Syntetic - types defined by constraints, they don't have names.
+// Nominative(gnominative) - types that have names.
+// These two subtyping systems are crossed:
+//     e.g. `Name < Printable & Hashable` and `T < Printable & Hashable`
+//     presented as: nominative and syntetic TypeNodes, where second has first one as child.
+//     It represent that they are constraints equally types, but nominatively different.
+//     Nominative can be substituted where syntetic is expected. And not always vice versa.
+//
+//     But nominative with only one supertype(universal) doesn't have syntetic parent.
+//     They can be distinguished by backlink in Following.
+
 pub const KindE = enum {
     universal, // https://en.wikipedia.org/wiki/Top_type
-    syntetic, // consstraints defined type
+    syntetic, // constraints defined type
     nominative, // just nominative with no generic parameters
     gnominative, // nominative with generic parameters
     opening, // opening parenthesis
@@ -49,7 +68,7 @@ childs: AutoHashSet(*TypeNode),
 of: *Node,
 followings: std.ArrayList(*Following),
 
-pub fn init(allocator: Allocator, kind: Kind, of: *Node) EngineError!*TypeNode {
+pub fn init(allocator: Allocator, kind: Kind, of: *Node) Allocator.Error!*TypeNode {
     const this = try allocator.create(TypeNode);
 
     this.* = .{
@@ -108,6 +127,10 @@ pub fn notEmpty(self: *TypeNode) bool {
 }
 
 pub fn setAsParentTo(parent: *TypeNode, child: *TypeNode) std.mem.Allocator.Error!void {
+    if (parent == child) {
+        return; // TODO: figure out who trigger it
+    }
+
     try parent.childs.put(child, {});
     try child.parents.put(parent, {});
 }
@@ -121,7 +144,7 @@ pub fn removeChild(parent: *TypeNode, child: *TypeNode) void {
     }
 }
 
-pub fn getFollowing(self: *TypeNode, backlink: ?*TypeNode, kind: Following.Kind, allocator: Allocator) !*Following {
+pub fn getFollowing(self: *TypeNode, backlink: ?*TypeNode, kind: Following.Kind, allocator: Allocator) Allocator.Error!*Following {
     for (self.followings.items) |following| {
         if (following.backlink == backlink and following.kind == kind) {
             return following;
@@ -162,36 +185,24 @@ pub fn extractAllDecls(self: *TypeNode, storage: *AutoHashSet(*Declaration)) All
     }
 }
 
-// NOTE: top level variance is covariant
-pub fn getAllByVariance(self: *TypeNode, variance: Variance, allocator: Allocator) EngineError!std.ArrayList(*TypeNode) {
-    var typeNodes = AutoHashSet(*TypeNode).init(allocator);
-
+pub fn collectAllWithVariance(self: *TypeNode, variance: Variance, storage: *AutoHashSet(*TypeNode)) Allocator.Error!void {
+    // std.debug.print("TypeNode.collectAllWithVariance\n", .{});
     // TODO: take care constraints
     switch (variance) {
         .invariant => {
-            try typeNodes.put(self, {});
+            try storage.put(self, {});
         },
         .covariant => {
-            try self.getChildsRecursively(&typeNodes);
+            try self.getChildsRecursively(storage);
         },
         .contravariant => {
-            try self.getParentsRecursively(&typeNodes);
+            try self.getParentsRecursively(storage);
         },
         .bivariant => {
-            try self.getChildsRecursively(&typeNodes);
-            try self.getParentsRecursively(&typeNodes);
+            try self.getChildsRecursively(storage);
+            try self.getParentsRecursively(storage);
         },
     }
-
-    var result = std.ArrayList(*TypeNode).init(allocator);
-
-    var it = typeNodes.keyIterator();
-    while (it.next()) |typeNode| {
-        try result.append(typeNode.*);
-    }
-    // TODO: free typNodes
-
-    return result;
 }
 
 pub fn getChildsRecursively(self: *TypeNode, storage: *AutoHashSet(*TypeNode)) Allocator.Error!void {
@@ -215,4 +226,39 @@ pub fn getParentsRecursively(self: *TypeNode, storage: *AutoHashSet(*TypeNode)) 
 // TODO: equality of names a bit expensive, but it now it's the only way to handle syntetic
 pub fn eql(self: *TypeNode, other: *TypeNode, allocator: Allocator) Allocator.Error!bool {
     return std.mem.eql(u8, try self.name(allocator), try other.name(allocator));
+}
+
+pub fn commonSynteticChild(x: *TypeNode, y: *TypeNode) ?*TypeNode {
+    var xChildsIt = x.childs.keyIterator();
+    while (xChildsIt.next()) |xChild| {
+        var yChildsIt = y.childs.keyIterator();
+        while (yChildsIt.next()) |yChild| {
+            if (xChild.* == yChild.* and xChild.*.kind == Kind.syntetic) {
+                return xChild.*;
+            }
+        }
+    }
+
+    return null;
+}
+
+pub fn createSynteticChild(x: *TypeNode, y: *TypeNode, of: *Node, allocator: Allocator) Allocator.Error!*TypeNode {
+    const newUpperBound = try TypeNode.init(allocator, TypeNode.Kind.syntetic, of);
+    try of.syntetics.append(newUpperBound);
+
+    try x.setAsParentTo(newUpperBound);
+    try y.setAsParentTo(newUpperBound);
+
+    return newUpperBound;
+}
+
+pub fn isChildOf(self: *TypeNode, parent: *TypeNode) bool {
+    var it = self.parents.keyIterator();
+    while (it.next()) |next| {
+        if (next.* == parent) {
+            return true;
+        }
+    }
+
+    return false;
 }

@@ -7,6 +7,7 @@ const SegmentedList = @import("std").SegmentedList;
 const utils = @import("utils.zig");
 const main = @import("../main.zig");
 const tree = @import("tree.zig");
+const subtyping = @import("subtyping.zig");
 const defaultVariances = @import("variance.zig").defaultVariances;
 
 const AutoHashSet = utils.AutoHashSet;
@@ -22,6 +23,7 @@ const Variance = @import("variance.zig").Variance;
 const Shard = @import("entities.zig").Shard;
 const FollowingShard = @import("entities.zig").FollowingShard;
 const Mirror = @import("entities.zig").Mirror;
+const Cache = @import("cache.zig").Cache;
 
 const LOG = @import("config").logp;
 
@@ -38,7 +40,7 @@ closing: *TypeNode,
 endings: std.ArrayList(*Declaration),
 by: *TypeNode,
 
-pub fn init(allocator: Allocator, by: *TypeNode) EngineError!*Node {
+pub fn init(allocator: Allocator, by: *TypeNode) Allocator.Error!*Node {
     const named = std.StringHashMap(*TypeNode).init(allocator);
     const syntetics = std.ArrayList(*TypeNode).init(allocator);
 
@@ -96,80 +98,67 @@ pub fn mirrorWalk(self: *Node, reflection: *Node, storage: *AutoHashSet(Mirror),
 }
 
 pub fn search(self: *Node, next: *TypeC, allocator: Allocator) EngineError!*TypeNode {
-    const result = try self.searchWithVariance(next, Variance.invariant, allocator);
+    var storage = AutoHashSet(*TypeNode).init(allocator); // TODO: free
+    try self.searchWithVariance(next, Variance.invariant, &storage, allocator);
+    std.debug.assert(storage.count() == 1);
 
-    std.debug.assert(result.items.len == 1);
-
-    return result.getLast();
+    var it = storage.keyIterator();
+    return it.next().?.*;
 }
 
 // do exact search or insert if no present
-pub fn searchWithVariance(self: *Node, next: *TypeC, variance: Variance, allocator: Allocator) EngineError!std.ArrayList(*TypeNode) {
-    if (LOG) {
-        std.debug.print("searchWithVariance: {s}\n", .{next.ty});
+pub fn searchWithVariance(self: *Node, next: *TypeC, variance: Variance, storage: *AutoHashSet(*TypeNode), allocator: Allocator) EngineError!void {
+    // std.debug.print("searchWithVariance: {s} {}\n", .{ next.ty, variance });
+    switch (next.ty.*) {
+        .nominative => try self.searchNominative(next, variance, storage, allocator),
+        .function => try self.searchFunction(next, variance, storage, allocator),
+        .list => try self.searchList(next, variance, storage, allocator),
     }
-    return switch (next.ty.*) {
-        .nominative => try self.searchNominative(next, variance, allocator),
-        .function => try self.searchFunction(next, variance, allocator),
-        .list => try self.searchList(next, variance, allocator),
-    };
 }
 
-pub fn searchNominative(self: *Node, next: *TypeC, variance: Variance, allocator: Allocator) EngineError!std.ArrayList(*TypeNode) {
-    if (LOG) {
-        std.debug.print("searchNominative: {s}\n", .{next.ty});
-    }
+pub fn searchNominative(self: *Node, next: *TypeC, variance: Variance, storage: *AutoHashSet(*TypeNode), allocator: Allocator) EngineError!void {
+    // std.debug.print("searchNominative: {s}\n", .{next.ty});
     if (next.ty.nominative.generic) |_| {
-        return self.searchNominativeWithGeneric(next, variance, allocator);
+        try self.searchNominativeWithGeneric(next, variance, storage, allocator);
+        return;
     }
 
     if (next.ty.nominative.isGeneric()) {
         const nextVariance = variance.x(defaultVariances.nominativeGeneric);
-        return self.searchGeneric(next, nextVariance, allocator);
+
+        try self.searchGeneric(next, nextVariance, storage, allocator);
     } else {
-        return self.searchRealNominative(next, variance, allocator);
+        var typeNode = self.named.get(next.ty.nominative.name) orelse try self.createAndInsertNamed(next, allocator);
+
+        try typeNode.collectAllWithVariance(variance, storage);
     }
 }
 
-pub fn searchRealNominative(self: *Node, next: *TypeC, variance: Variance, allocator: Allocator) EngineError!std.ArrayList(*TypeNode) {
-    if (self.named.get(next.ty.nominative.name)) |alreadyInserted| {
-        return alreadyInserted.getAllByVariance(variance, allocator);
-    }
+fn createAndInsertNamed(self: *Node, next: *TypeC, allocator: Allocator) EngineError!*TypeNode {
+    // std.debug.print("createAndInsertNamed\n", .{});
     const name = try utils.simplifyName(next.ty.nominative.name, allocator);
-    var newTypeNode: *TypeNode = undefined;
-    if (next.ty.nominative.hadGeneric) {
-        newTypeNode = try TypeNode.init(allocator, .{ .gnominative = name }, self);
-    } else {
-        newTypeNode = try TypeNode.init(allocator, .{ .nominative = name }, self);
-    }
+
+    const kind: TypeNode.Kind = if (next.ty.nominative.hadGeneric) .{ .gnominative = name } else .{ .nominative = name };
+    const newTypeNode = try TypeNode.init(allocator, kind, self);
 
     try self.named.put(name, newTypeNode);
 
-    try solveNominativePosition(self.universal, newTypeNode);
+    try subtyping.insertNominative(newTypeNode, self, Cache.isSubtype, allocator);
 
-    return newTypeNode.getAllByVariance(variance, allocator);
+    return newTypeNode;
 }
 
-pub fn searchGeneric(self: *Node, next: *TypeC, variance: Variance, allocator: Allocator) EngineError!std.ArrayList(*TypeNode) {
-    var parents = std.ArrayList(*TypeNode).init(allocator);
+pub fn searchGeneric(self: *Node, next: *TypeC, variance: Variance, storage: *AutoHashSet(*TypeNode), allocator: Allocator) EngineError!void {
+    var parents = AutoHashSet(*TypeNode).init(allocator);
 
     // generic are only constraint defined, and it requires another inserting algorithm
     for (next.constraints.items) |constraint| {
-        if (LOG) {
-            std.debug.print("Inserting constraint {s} < {s}\n", .{ next.ty.*, constraint });
-        }
-
         for (constraint.superTypes.items) |superType| {
-            const constraintTypeNode = try self.searchWithVariance(superType, Variance.invariant, allocator);
-            try parents.append(constraintTypeNode.items[0]);
+            try self.searchWithVariance(superType, Variance.invariant, &parents, allocator);
         }
     }
 
-    if (parents.items.len == 0) {
-        try parents.append(self.universal);
-    }
-
-    const result = try solvePosition(self, parents, allocator);
+    const result = try subtyping.solveConstraintsDefinedPosition(self, &parents, allocator);
 
     if (next.ty.nominative.typeNode) |backlink| {
         const following = try allocator.create(Following);
@@ -180,208 +169,12 @@ pub fn searchGeneric(self: *Node, next: *TypeC, variance: Variance, allocator: A
         next.ty.nominative.typeNode = result;
     }
 
-    return result.getAllByVariance(variance, allocator);
+    try result.collectAllWithVariance(variance, storage);
 }
 
-// Находит позицию джененрика в графе подстановки
-// Все позиции дженериков(даже universal) являются синтетическими(AA??)
-//
-// Констрейнты определяют TypeNode меньше которых должна быть вставляемая(искомая)
-// Они могут быть как функциональными или соотетсвющие именам(но не составными)
-//
-// TODO: support subtype checking for functions
-pub fn solvePosition(self: *Node, parents_: std.ArrayList(*TypeNode), allocator: Allocator) EngineError!*TypeNode {
-    var parents = AutoHashSet(*TypeNode).init(allocator);
-    for (parents_.items) |parent| {
-        try parents.put(parent, {});
-    }
-
-    // // TODO: remove debug printing
-    // var it = parents.keyIterator();
-    // while (it.next()) |parent| {
-    //     std.debug.print("Next initial parent: {s}\n", .{parent.*.of});
-    // }
-
-    // if any 2 of them have common child replace with it
-    // (The child must be syntetic! Or synteric should be inserted betwen parents and him)
-    var changed = true;
-    while (changed) {
-        if (parents.count() == 1) {
-            break;
-        }
-
-        changed = false;
-
-        var syntetic_: ?*TypeNode = null;
-
-        var it1 = parents.keyIterator();
-        outer: while (it1.next()) |x| {
-            var it2 = parents.keyIterator();
-            while (it2.next()) |y| {
-                if (x != y) {
-                    var xChildIt = x.*.childs.keyIterator();
-                    find_next_common_child: while (xChildIt.next()) |xChild| {
-                        var yChildIt = x.*.childs.keyIterator();
-                        while (yChildIt.next()) |yChild| {
-                            if (xChild.* == yChild.*) { // ptr equality
-                                // first common child may be not only one
-                                const commonChild = xChild.*;
-                                // if common child is syntetic then no other commom childs can be
-                                if (commonChild.kind == TypeNode.Kind.syntetic) {
-                                    // std.debug.print("is syntetic\n", .{});
-                                    // TODO: not ignore operation result
-                                    _ = parents.remove(x.*);
-                                    _ = parents.remove(y.*);
-                                    try parents.put(commonChild, {});
-                                } else {
-                                    // common is not syntetic, so it should be divorced from parents with syntetic
-
-                                    // breaking current relations
-                                    _ = x.*.childs.remove(xChild.*); // TODO: it's not save remove element, because of iterator invalidation
-                                    _ = y.*.childs.remove(yChild.*);
-
-                                    // TODO: check bug if 2 times performed same type searching
-                                    var parentsRemoved: u2 = 0;
-                                    remove_parents_from_child: while (true) {
-                                        // std.debug.print("Removing parent from child: '{s}' with {} super\n", .{ commonChild.of, commonChild.parents.items.len });
-
-                                        var it = commonChild.parents.keyIterator();
-                                        while (it.next()) |commonChildParents| {
-                                            if (commonChildParents.* == x.*) {
-                                                _ = commonChild.parents.remove(commonChildParents.*);
-                                                parentsRemoved += 1;
-                                                break;
-                                            } else if (commonChildParents.* == y.*) {
-                                                _ = commonChild.parents.remove(commonChildParents.*);
-                                                parentsRemoved += 1;
-                                                break;
-                                            }
-
-                                            if (parentsRemoved == 2) {
-                                                break :remove_parents_from_child;
-                                                // break;
-                                            }
-                                        }
-
-                                        if (commonChild.parents.count() == 0) {
-                                            break :remove_parents_from_child;
-                                        }
-                                    }
-
-                                    const syntetic = syntetic_ orelse try TypeNode.init(allocator, TypeNode.Kind.syntetic, self);
-                                    syntetic_ = syntetic;
-
-                                    try x.*.setAsParentTo(syntetic);
-                                    try y.*.setAsParentTo(syntetic);
-                                    try syntetic.setAsParentTo(commonChild);
-
-                                    // for example Array and Set are implementing Collection and Printable
-                                    // so both of them should be relinked with syntetic
-                                    // so other common childred should be founded
-                                    break :find_next_common_child;
-                                }
-                                changed = true;
-                                break :outer;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    if (parents.count() != 1) {
-        // pure syntetic, no one reach this state yet
-        const syntetic = try TypeNode.init(allocator, TypeNode.Kind.syntetic, self);
-
-        var it = parents.keyIterator();
-        while (it.next()) |parent| {
-            try parent.*.setAsParentTo(syntetic);
-        }
-
-        try self.syntetics.append(syntetic);
-
-        return syntetic;
-    }
-
-    var it = parents.keyIterator();
-    while (it.next()) |parent| {
-        // std.debug.print("Next updated parent: {s}\n", .{parent.*.of});
-
-        switch (parent.*.kind) {
-            .syntetic => try self.syntetics.append(parent.*),
-            else => {},
-        }
-
-        return parent.*;
-    }
-
-    // TODO: this is cringe code, but alternatives can lead to seagfault
-    return EngineError.ShouldBeUnreachable;
-}
-
-// Даже если у номинатива есть ограничения их не нужно знать заранее,
-// поскольку алгоритм его вставки состоит в проталкивании его вниз,
-// то есть его ограничения будут проверяться непосредственно в ходе этой операции.
-//
-// Эту функцию стоит вызывать только если такого номинатива ещё нет в графе(иначе можно вернуть то что находиться в мапе types)
-// TODO: предыдущее верно в случае если у типа неизменный набор ограничений
-//
-// Алгоритм следующий: 1) верно что для данной ноды вставляемая подставима
-// Перебираются все меньшие к текущей и если находятся старшие к вставляемой,
-// то связь с текущей удаляется и выставляются связи к нижестоящим
-// (Если изначально передавать текущую без связи, то наоборот, если кандижатов нет, то выставляется
-// связь с текущей, а иначе рекурсивно вызывается поиск с кандидатами из ниже стоящих)
-// TODO: обработать случай когда нижестоящая является синтетической вершиной
-// (для неё справедлив факт её можно использовать как кандидата)
-pub fn solveNominativePosition(current: *TypeNode, new: *TypeNode) EngineError!void {
-    var pushedBelow = false;
-
-    {
-        var currentChildsIt = current.childs.keyIterator();
-        while (currentChildsIt.next()) |sub| {
-            if (try tree.current.askSubtype(sub.*, new)) {
-                pushedBelow = true;
-                _ = try solveNominativePosition(sub.*, new);
-            }
-
-            // Or if it's syntatic typeNode (constraint defined)
-            // and substable for all top nodes of syntetic
-            // TODO: возможно придётся расщеплять синтетику, потому что не все её топ ноды могут быть старшими к текущей
-            // ??: опять же подходящие старшие будут поставлены выше текущий по другим путям
-            if (sub.*.kind == TypeNode.Kind.syntetic) {
-                pushedBelow = true;
-                var subParentsIt = sub.*.parents.keyIterator();
-                while (subParentsIt.next()) |subParent| {
-                    if (!(try tree.current.askSubtype(subParent.*, new))) {
-                        pushedBelow = false;
-                    }
-                }
-
-                if (pushedBelow) {
-                    _ = try solveNominativePosition(sub.*, new);
-                }
-            }
-        }
-    }
-
-    if (!pushedBelow) {
-        var currentChildsIt = current.childs.keyIterator();
-        while (currentChildsIt.next()) |sub| {
-            if (try tree.current.askSubtype(new, sub.*)) {
-                try new.setAsParentTo(sub.*);
-                current.removeChild(sub.*);
-            }
-        }
-
-        try current.setAsParentTo(new);
-    }
-}
-
-pub fn searchNominativeWithGeneric(self: *Node, next: *TypeC, variance: Variance, allocator: Allocator) EngineError!std.ArrayList(*TypeNode) {
-    if (LOG) {
-        std.debug.print("Searching nominative with generic \n", .{});
-    }
+/// unpacks `Nominantive<T>` to function `T -> Nominative_`
+pub fn searchNominativeWithGeneric(self: *Node, next: *TypeC, variance: Variance, storage: *AutoHashSet(*TypeNode), allocator: Allocator) EngineError!void {
+    // std.debug.print("Searching nominative with generic \n", .{});
     const generic = next.ty.nominative.generic orelse unreachable;
 
     // removing generic to escape recursive loop
@@ -407,28 +200,27 @@ pub fn searchNominativeWithGeneric(self: *Node, next: *TypeC, variance: Variance
     const typec = try TypeC.init(allocator, ty);
 
     // TODO: handle constrains `A<T> < C`
-    const typeNodes = try self.searchHOF(typec, variance, allocator);
+    try self.searchHOF(typec, variance, storage, allocator);
 
-    const middle = typeNodes.items[0].genericFollowing(); // first should always be exact
-    middle.kind = Following.Kind.generic;
-
-    return typeNodes;
+    if (storage.count() == 1) { // In case of insearting Variance = invariant, so only one result should be
+        var it = storage.keyIterator();
+        var middle = it.next().?.*.genericFollowing(); // first should always be exact
+        middle.kind = Following.Kind.generic;
+    }
 }
 
-pub fn searchFunction(self: *Node, next: *TypeC, variance: Variance, allocator: Allocator) EngineError!std.ArrayList(*TypeNode) {
-    if (LOG) {
-        std.debug.print("Searching function {s}\n", .{next.ty});
-    }
+pub fn searchFunction(self: *Node, next: *TypeC, variance: Variance, storage: *AutoHashSet(*TypeNode), allocator: Allocator) EngineError!void {
+    // std.debug.print("Searching function {s}\n", .{next.ty});
     const from = next.ty.function.from;
     const to = next.ty.function.to;
 
-    const finv = variance.x(defaultVariances.functionIn);
+    const fInV = variance.x(defaultVariances.functionIn);
 
-    var continuations: std.ArrayList(*TypeNode) = undefined;
+    var continuations = AutoHashSet(*TypeNode).init(allocator);
     switch (from.ty.*) {
-        .nominative => continuations = try self.searchNominative(from, finv, allocator),
-        .function => continuations = try self.searchHOF(from, finv, allocator),
-        .list => continuations = try self.searchList(from, finv, allocator),
+        .nominative => try self.searchNominative(from, fInV, &continuations, allocator),
+        .function => try self.searchHOF(from, fInV, &continuations, allocator),
+        .list => try self.searchList(from, fInV, &continuations, allocator),
     }
 
     // TODO: it's not true that it always nominative
@@ -442,23 +234,17 @@ pub fn searchFunction(self: *Node, next: *TypeC, variance: Variance, allocator: 
         else => {},
     }
 
-    const foutv = variance.x(defaultVariances.functionOut);
+    const fOutV = variance.x(defaultVariances.functionOut);
 
-    var result = std.ArrayList(*TypeNode).init(allocator);
-    for (continuations.items) |continuation| {
-        const following = try continuation.getFollowing(null, followingKind, allocator);
-        const tns = try (following).to.searchWithVariance(to, foutv, allocator); // TODO: check null in following
-
-        // TODO: check
-        for (tns.items) |tn| {
-            try result.append(tn);
-        }
+    var continuationsIt = continuations.keyIterator();
+    while (continuationsIt.next()) |continuation| {
+        const following = try continuation.*.getFollowing(null, followingKind, allocator); // TODO: check null in following
+        try following.to.searchWithVariance(to, fOutV, storage, allocator);
     }
-
-    return result;
 }
 
-pub fn searchList(self: *Node, next: *TypeC, variance: Variance, allocator: Allocator) EngineError!std.ArrayList(*TypeNode) {
+pub fn searchList(self: *Node, next: *TypeC, variance: Variance, storage: *AutoHashSet(*TypeNode), allocator: Allocator) EngineError!void {
+    // std.debug.print("searchList {s} {}\n", .{ next.ty, variance });
     if (!next.ty.list.ordered) {
         // Order agnostic lists like OOP function parameters should be ordered before
 
@@ -470,62 +256,59 @@ pub fn searchList(self: *Node, next: *TypeC, variance: Variance, allocator: Allo
 
     const listVariance = variance.x(defaultVariances.tupleVariance);
 
-    var currentNodes: std.ArrayList(*Node) = std.ArrayList(*Node).init(allocator);
-    try currentNodes.append(followingOfOpening.to);
-    var prevTypeNodes: std.ArrayList(*TypeNode) = std.ArrayList(*TypeNode).init(allocator);
+    var currentNodes = AutoHashSet(*Node).init(allocator);
+    try currentNodes.put(followingOfOpening.to, {});
+    var prevTypeNodes = AutoHashSet(*TypeNode).init(allocator);
     for (next.ty.list.list.items) |nextType| {
-        prevTypeNodes = std.ArrayList(*TypeNode).init(allocator);
-        for (currentNodes.items) |currentNode| {
-            const nexts = (try currentNode.searchWithVariance(nextType, listVariance, allocator));
+        prevTypeNodes = AutoHashSet(*TypeNode).init(allocator);
 
-            // TODO: free
-            try prevTypeNodes.appendSlice(nexts.items);
+        var currentNodesIt = currentNodes.keyIterator();
+        while (currentNodesIt.next()) |currentNode| {
+            try currentNode.*.searchWithVariance(nextType, listVariance, &prevTypeNodes, allocator);
         }
 
         // TODO: free!!!
-        currentNodes = std.ArrayList(*Node).init(allocator);
-        for (prevTypeNodes.items) |prevTypeNode| {
+        currentNodes = AutoHashSet(*Node).init(allocator);
+
+        var prevTypeNodesIt = prevTypeNodes.keyIterator();
+        while (prevTypeNodesIt.next()) |prevTypeNode| {
             // По идее тут могут встретиться ноды по которым дальше никак нельзя будет походить,
             // поэтому нужно добавить фильтр TODO:
             // Это к вопросу о том что не нужно добавлять в дерево вершины, которые заведомо никуда не ведут!!!
-            const node = (try prevTypeNode.getFollowing(null, Following.Kind.comma, allocator)).to; // TODO: check backlink
-            try currentNodes.append(node);
+            const node = (try prevTypeNode.*.getFollowing(null, Following.Kind.comma, allocator)).to; // TODO: check backlink
+            try currentNodes.put(node, {});
         }
     }
 
     // in case of adding empty tuple
-    if (prevTypeNodes.items.len == 0) {
-        // just return previous opening bracket
-        // std.debug.print("searchList: {s}, open: Node = '{s}'\n", .{ next.ty, try followingOfOpening.to.by.labelName() });
-        try prevTypeNodes.append(followingOfOpening.to.by);
+    if (prevTypeNodes.count() == 0) {
+        // just return previous opening parenthesis
+        try prevTypeNodes.put(followingOfOpening.to.by, {});
     }
 
-    var result = std.ArrayList(*TypeNode).init(allocator);
-    for (prevTypeNodes.items) |prevTypeNode| {
-        const followingToClosing = try prevTypeNode.getFollowing(null, Following.Kind.fake, allocator);
+    var prevTypeNodesIt = prevTypeNodes.keyIterator();
+    while (prevTypeNodesIt.next()) |prevTypeNode| {
+        const followingToClosing = try prevTypeNode.*.getFollowing(null, Following.Kind.fake, allocator);
         followingToClosing.kind = Following.Kind.fake;
         const fclose = followingToClosing.to.closing;
-        try result.append(fclose);
+        try storage.put(fclose, {});
     }
-
-    return result;
 }
 
-pub fn searchHOF(self: *Node, nextType: *TypeC, variance: Variance, allocator: Allocator) EngineError!std.ArrayList(*TypeNode) {
+pub fn searchHOF(self: *Node, nextType: *TypeC, variance: Variance, storage: *AutoHashSet(*TypeNode), allocator: Allocator) EngineError!void {
     const followingOfOpening = try self.opening.getFollowing(null, Following.Kind.fake, allocator);
-    followingOfOpening.kind = Following.Kind.fake;
-    const fends: std.ArrayList(*TypeNode) = try followingOfOpening.to.searchWithVariance(nextType, variance, allocator);
 
-    var result = std.ArrayList(*TypeNode).init(allocator);
-    for (fends.items) |fend| {
-        const followingToClosing = try fend.getFollowing(null, Following.Kind.fake, allocator);
-        followingToClosing.kind = Following.Kind.fake;
-        const fclose: *TypeNode = followingToClosing.to.closing;
+    var fends = AutoHashSet(*TypeNode).init(allocator);
+    defer fends.deinit();
+    try followingOfOpening.to.searchWithVariance(nextType, variance, &fends, allocator);
 
-        try result.append(fclose);
+    var fendsIt = fends.keyIterator();
+    while (fendsIt.next()) |fend| {
+        const followingToClosing = try fend.*.getFollowing(null, Following.Kind.fake, allocator);
+        const fclosed: *TypeNode = followingToClosing.to.closing;
+
+        try storage.put(fclosed, {});
     }
-
-    return result;
 }
 
 pub fn extractAllDecls(self: *Node, storage: *AutoHashSet(*Declaration)) Allocator.Error!void {

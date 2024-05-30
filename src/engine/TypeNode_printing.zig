@@ -5,6 +5,11 @@ const Allocator = @import("std").mem.Allocator;
 
 const main = @import("../main.zig");
 const utils = @import("utils.zig");
+const tree = @import("tree.zig");
+
+const AutoHashSet = utils.AutoHashSet;
+const Following = @import("following.zig").Following;
+const EngineError = @import("error.zig").EngineError;
 
 pub fn name(self: *TypeNode, allocator: Allocator) Allocator.Error![]const u8 {
     return switch (self.kind) {
@@ -40,7 +45,7 @@ pub fn color(self: *TypeNode) []const u8 {
 }
 
 pub fn fullPathName(self: *TypeNode, allocator: Allocator) Allocator.Error![]const u8 {
-    return try std.fmt.allocPrint(main.gallocator, "{s}{s}", .{
+    return try std.fmt.allocPrint(allocator, "{s}{s}", .{
         try self.of.fullPathName(allocator),
         try self.name(allocator),
     });
@@ -82,6 +87,8 @@ pub fn drawConnections(self: *TypeNode, file: std.fs.File, allocator: Allocator)
 pub fn synteticName(self: *TypeNode, isLabel: bool, allocator: Allocator) Allocator.Error![]const u8 {
     var result = std.ArrayList(u8).init(allocator);
 
+    const delimiter = if (isLabel) " & " else "and";
+
     var it = self.parents.keyIterator();
     while (it.next()) |parent| {
         if (isLabel) {
@@ -91,18 +98,46 @@ pub fn synteticName(self: *TypeNode, isLabel: bool, allocator: Allocator) Alloca
             } else {
                 try result.appendSlice(try parent.*.labelName(allocator));
             }
-            try result.appendSlice(" & ");
+            try result.appendSlice(delimiter);
         } else {
-            try result.appendSlice(try parent.*.of.fullPathName(allocator));
-            try result.appendSlice("and");
+            try result.appendSlice(try parent.*.name(allocator));
+            try result.appendSlice(delimiter);
         }
     }
 
     if (self.parents.count() > 0) {
+        return removeDuplicates(result.items[0 .. result.items.len - 3], delimiter, allocator);
+    }
+
+    return removeDuplicates(result.items, delimiter, allocator); // TODO: check allocator releasing
+}
+
+// TODO: remove this updating logic with finding minorants
+fn removeDuplicates(str: []const u8, delimiter: []const u8, allocator: Allocator) Allocator.Error![]const u8 {
+    var parts = std.StringHashMap(void).init(allocator);
+
+    var it = std.mem.split(u8, str, delimiter);
+    while (it.next()) |part| {
+        try parts.put(std.mem.trim(u8, part, " "), {});
+    }
+
+    var result = std.ArrayList(u8).init(allocator);
+
+    var partsIt = parts.keyIterator();
+    while (partsIt.next()) |part| {
+        if (std.mem.eql(u8, part.*, "")) {
+            std.debug.print("EMPTY!\n", .{});
+        }
+
+        try result.appendSlice(part.*);
+        try result.appendSlice(delimiter);
+    }
+
+    if (parts.count() > 1 and result.items.len > 0) {
         return result.items[0 .. result.items.len - 3];
     }
 
-    return result.items; // TODO: check allocator releasing
+    return result.items;
 }
 
 pub fn partName(self: *TypeNode, arrow: []const u8, allocator: Allocator) ![]const u8 {
@@ -123,4 +158,19 @@ pub fn partName(self: *TypeNode, arrow: []const u8, allocator: Allocator) ![]con
         try self.labelName(allocator),
         arrow,
     });
+}
+
+pub fn originalTypeName(of: *TypeNode, allocator: Allocator) Allocator.Error![]const u8 {
+    switch (of.kind) {
+        // .nominative =>
+        .gnominative => {
+            const withGeneric = try std.fmt.allocPrint(allocator, "{s}<Any>", .{
+                try of.name(allocator),
+            });
+
+            // std.debug.print("result: '{s}'\n", .{withGeneric});
+            return withGeneric;
+        },
+        else => return try of.name(allocator),
+    }
 }

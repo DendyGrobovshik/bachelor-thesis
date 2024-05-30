@@ -1,0 +1,17 @@
+{
+  "name": "kotlin_driver",
+  "version": "1.0.0",
+  "description": "",
+  "main": "declaration_extractor.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "node-html-parser": "^6.1.13"
+  }
+}

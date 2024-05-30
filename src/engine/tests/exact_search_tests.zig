@@ -22,8 +22,9 @@ test "higher order functions are not mixed with common" {
         const query = try queryParser.parseQuery(allocator, rawDecl.ty);
         const decls = try searchIndex.findDeclarations(query.ty);
 
-        try std.testing.expectEqual(decls.items.len, 1);
-        try std.testing.expectEqualStrings(rawDecl.name, decls.items[0].name);
+        try std.testing.expectEqual(decls.count(), 1);
+        var it = decls.keyIterator();
+        try std.testing.expectEqualStrings(rawDecl.name, it.next().?.*.name);
     }
 }
 
@@ -41,8 +42,9 @@ test "generics differs with different arguments differs" {
         const query = try queryParser.parseQuery(allocator, rawDecl.ty);
         const decls = try searchIndex.findDeclarations(query.ty);
 
-        try std.testing.expectEqual(decls.items.len, 1);
-        try std.testing.expectEqualStrings(rawDecl.name, decls.items[0].name);
+        try std.testing.expectEqual(decls.count(), 1);
+        var it = decls.keyIterator();
+        try std.testing.expectEqualStrings(rawDecl.name, it.next().?.*.name);
     }
 }
 
@@ -60,8 +62,9 @@ test "nominative with concrete differs from nominative with generic" {
         const query = try queryParser.parseQuery(allocator, rawDecl.ty);
         const decls = try searchIndex.findDeclarations(query.ty);
 
-        try std.testing.expectEqual(decls.items.len, 1);
-        try std.testing.expectEqualStrings(rawDecl.name, decls.items[0].name);
+        try std.testing.expectEqual(decls.count(), 1);
+        var it = decls.keyIterator();
+        try std.testing.expectEqualStrings(rawDecl.name, it.next().?.*.name);
     }
 }
 
@@ -79,8 +82,9 @@ test "concrete type and constraint with this type" {
         const query = try queryParser.parseQuery(allocator, rawDecl.ty);
         const decls = try searchIndex.findDeclarations(query.ty);
 
-        try std.testing.expectEqual(decls.items.len, 1);
-        try std.testing.expectEqualStrings(rawDecl.name, decls.items[0].name);
+        try std.testing.expectEqual(decls.count(), 1);
+        var it = decls.keyIterator();
+        try std.testing.expectEqualStrings(rawDecl.name, it.next().?.*.name);
     }
 }
 
@@ -100,8 +104,9 @@ test "naminative with and without generic" {
         const query = try queryParser.parseQuery(allocator, rawDecl.ty);
         const decls = try searchIndex.findDeclarations(query.ty);
 
-        try std.testing.expectEqual(decls.items.len, 1);
-        try std.testing.expectEqualStrings(rawDecl.name, decls.items[0].name);
+        try std.testing.expectEqual(decls.count(), 1);
+        var it = decls.keyIterator();
+        try std.testing.expectEqualStrings(rawDecl.name, it.next().?.*.name);
     }
 }
 
@@ -121,7 +126,7 @@ test "two with same type" {
         const query = try queryParser.parseQuery(allocator, rawDecl.ty);
         const decls = try searchIndex.findDeclarations(query.ty);
 
-        try std.testing.expectEqual(decls.items.len, 2);
+        try std.testing.expectEqual(decls.count(), 2);
     }
 }
 
@@ -143,8 +148,9 @@ test "finding lists" {
         const query = try queryParser.parseQuery(allocator, rawDecl.ty);
         const decls = try searchIndex.findDeclarations(query.ty);
 
-        try std.testing.expectEqual(decls.items.len, 1);
-        try std.testing.expectEqualStrings(decls.getLast().name, rawDecl.name);
+        try std.testing.expectEqual(decls.count(), 1);
+        var it = decls.keyIterator();
+        try std.testing.expectEqualStrings(rawDecl.name, it.next().?.*.name);
     }
 }
 
@@ -166,8 +172,9 @@ test "unorded lists lists" {
         const query = try queryParser.parseQuery(allocator, rawDecl.ty);
         const decls = try searchIndex.findDeclarations(query.ty);
 
-        try std.testing.expectEqual(decls.items.len, 1);
-        try std.testing.expectEqualStrings(decls.getLast().name, rawDecl.name);
+        try std.testing.expectEqual(decls.count(), 1);
+        var it = decls.keyIterator();
+        try std.testing.expectEqualStrings(rawDecl.name, it.next().?.*.name);
     }
 }
 
@@ -206,8 +213,8 @@ test "the types that were added to the tree are found by the exact query" {
         const query = try queryParser.parseQuery(allocator, rawDecl.ty);
         const decls = try searchIndex.findDeclarations(query.ty);
 
-        // First declaration in result is exact match
-        try std.testing.expectEqualStrings(rawDecl.name, decls.items[0].name);
+        var it = decls.keyIterator();
+        try std.testing.expectEqualStrings(rawDecl.name, it.next().?.*.name);
     }
 }
 
@@ -225,13 +232,14 @@ test "function with unordered parameters is found where query is ordered" {
     const query = try queryParser.parseQuery(allocator, "String -> Int -> Bool");
     const decls = try searchIndex.findDeclarations(query.ty);
 
-    try std.testing.expectEqual(3, decls.items.len);
+    try std.testing.expectEqual(3, decls.count());
 
     for (rawDecls) |rawDecl| {
         var found = false;
 
-        for (decls.items) |foundDecl| {
-            if (std.mem.eql(u8, foundDecl.name, rawDecl.name)) {
+        var declsIt = decls.keyIterator();
+        while (declsIt.next()) |foundDecl| {
+            if (std.mem.eql(u8, foundDecl.*.name, rawDecl.name)) {
                 found = true;
             }
         }
