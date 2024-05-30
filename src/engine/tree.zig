@@ -22,8 +22,6 @@ const Expression = @import("entities.zig").Expression;
 const Server = @import("../driver/server.zig").Server;
 const Mirror = @import("entities.zig").Mirror;
 
-const LOG = @import("config").logt;
-
 pub var current: *Tree = undefined;
 
 // TODO: allocator optimization(everywhere)
@@ -63,9 +61,7 @@ pub const Tree = struct {
     }
 
     pub fn buildTreeFromFile(path: []const u8, allocator: Allocator) !*Tree {
-        if (LOG) {
-            std.debug.print("BUILDING TREE FROM FILE...\n", .{});
-        }
+        // std.debug.print("BUILDING TREE FROM FILE...\n", .{});
 
         var t = try Tree.init(allocator);
 
@@ -95,13 +91,12 @@ pub const Tree = struct {
 
             const q = try queryParser.parseQuery(allocator, it.next().?);
 
-            // const decl = Declaration{ .name = name, .ty = q.type };
-            const decl = try allocator.create(Declaration);
-            decl.* = .{
-                .name = name,
-                .ty = q.ty,
-                .id = declId,
-            };
+            const decl = try Declaration.init(
+                allocator,
+                try Allocator.dupe(allocator, u8, name),
+                q.ty,
+                declId,
+            );
 
             try t.addDeclaration(decl);
         }
@@ -123,9 +118,7 @@ pub const Tree = struct {
 
     // uses dot to visualize builded tree
     pub fn doDraw(node: *Node, path: []const u8, allocator: Allocator) !void {
-        if (LOG) {
-            std.debug.print("Start drawing tree\n", .{});
-        }
+        // std.debug.print("Start drawing tree\n", .{});
         const file = try std.fs.cwd().createFile(
             path,
             .{ .truncate = true },
@@ -169,21 +162,14 @@ pub const Tree = struct {
     }
 
     // no comma + generic transformed to func
-    pub fn addDeclaration(self: *Tree, decl_: *Declaration) EngineError!void {
+    pub fn addDeclaration(self: *Tree, decl: *Declaration) EngineError!void {
         // std.debug.print("======ADDING DECLARATION... '{s}' with type '{s}' and index={}\n", .{ decl_.name, decl_.ty, decl_.id });
 
-        const ty = utils.orderTypeParameters(decl_.ty, self.allocator);
+        const ty = utils.orderTypeParameters(decl.ty, self.allocator);
         const leaf = try self.sweetLeaf(ty, self.allocator);
-
-        _ = try leaf.name(self.allocator);
 
         const following = try leaf.getFollowing(try utils.getBacklink(ty), Following.Kind.arrow, self.allocator);
 
-        // // TODO: this is a hack because some kind of miscompilation reuse same memory
-        // // and all the declaration names are indistinguishable(last name are applied to all)
-        // const newName = try std.fmt.allocPrint(self.allocator, "{s}", .{decl_.name});
-        const decl = try Declaration.init(self.allocator, decl_.name, ty);
-        decl.id = decl_.id;
         try following.to.endings.append(decl);
 
         // std.debug.print("=====DECLARATION ADDED\n", .{});

@@ -84,10 +84,7 @@ pub const Server = struct {
         const name = try std.fmt.allocPrint(self.allocator, "{s}", .{rawDecl.name});
         const query = try queryParser.parseQuery(self.allocator, rawDecl.ty);
 
-        var decl = try Declaration.init(self.allocator, name, query.ty);
-        decl.id = rawDecl.index;
-
-        return decl;
+        return try Declaration.init(self.allocator, name, query.ty, rawDecl.index);
     }
 
     /// awaitAndGreetClient must be invoked first

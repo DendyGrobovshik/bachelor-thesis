@@ -13,12 +13,13 @@ pub const Declaration = struct {
     ty: *TypeC,
     id: usize = 0,
 
-    pub fn init(allocator: Allocator, name: []const u8, ty: *TypeC) !*Declaration {
+    pub fn init(allocator: Allocator, name: []const u8, ty: *TypeC, id: usize) !*Declaration {
         const self = try allocator.create(Declaration);
 
         self.* = .{
             .name = name,
             .ty = ty,
+            .id = id,
         };
 
         return self;
