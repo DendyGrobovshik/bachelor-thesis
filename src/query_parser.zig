@@ -6,8 +6,6 @@ const TypeNode = @import("engine/TypeNode.zig");
 const utils = @import("utils.zig");
 const main = @import("main.zig");
 
-const LOG = @import("config").logp;
-
 /// parse `str` according to query_grammar.txt
 pub fn parseQuery(allocator: Allocator, str: []const u8) Parser().Error!Query {
     var parser = try Parser().init(allocator, str);
@@ -150,6 +148,26 @@ pub const Function = struct {
     to: *TypeC,
     directly: bool = true,
     braced: bool = false,
+
+    pub fn init(allocator: Allocator, from: *TypeC, to: *TypeC, directly: bool) !*TypeC {
+        const typec = try allocator.create(TypeC);
+        const ty = try allocator.create(Type);
+
+        ty.* = .{
+            .function = Function{
+                .from = from,
+                .to = to,
+                .directly = directly,
+            },
+        };
+
+        typec.* = .{
+            .ty = ty,
+            .constraints = std.ArrayList(Constraint).init(allocator),
+        };
+
+        return typec;
+    }
 
     pub fn format(
         this: Function,
@@ -447,14 +465,7 @@ pub fn Parser() type {
             const nextToken = self.next();
             switch (nextToken) {
                 Token.arrow => {
-                    const cont = try self.parseType();
-                    const ty = try allocator.create(Type);
-                    ty.* = .{ .function = .{
-                        .from = baseType,
-                        .to = cont,
-                        .directly = nextToken.arrow,
-                    } };
-                    return try wrapInTypeC(ty, allocator);
+                    return Function.init(allocator, baseType, try self.parseType(), nextToken.arrow);
                 },
                 Token.char => {
                     if (nextToken.char != ',' and nextToken.char != ')' and nextToken.char != '>') {
@@ -467,7 +478,6 @@ pub fn Parser() type {
                     }
 
                     var types = std.ArrayList(*TypeC).init(allocator);
-                    var ordered = false;
                     try types.append(baseType);
 
                     if (nextToken.char == ',') {
@@ -495,17 +505,13 @@ pub fn Parser() type {
                                         },
                                         else => try types.append(conts.ty.function.from),
                                     }
-                                    ordered = false;
 
-                                    const ty = try allocator.create(Type);
-                                    const from = try allocator.create(Type);
-                                    from.* = .{ .list = .{ .list = types, .ordered = ordered } };
-                                    ty.* = .{ .function = .{
-                                        .from = try wrapInTypeC(from, allocator),
-                                        .to = conts.ty.function.to,
-                                        .directly = conts.ty.function.directly,
-                                    } };
-                                    return wrapInTypeC(ty, allocator);
+                                    return Function.init(
+                                        allocator,
+                                        try List.init(allocator, types),
+                                        conts.ty.function.to,
+                                        conts.ty.function.directly,
+                                    );
                                 }
                             },
                             .nominative => {
@@ -516,9 +522,7 @@ pub fn Parser() type {
                         self.pos -= 1;
                     }
 
-                    const ty = try allocator.create(Type);
-                    ty.* = .{ .list = .{ .list = types, .ordered = ordered } };
-                    return try wrapInTypeC(ty, allocator);
+                    return List.init(allocator, types);
                 },
                 Token.end => return baseType,
                 Token.name => return Parser().Error.UnexpectedNominative,
@@ -544,10 +548,9 @@ pub fn Parser() type {
                     nextToken = self.next();
                     switch (nextToken) {
                         .char => if (nextToken.char == ')') {
-                            // TODO: empty allocator should be used
-                            const empty = std.ArrayList(*TypeC).init(allocator);
+                            const empty = std.ArrayList(*TypeC).init(undefined);
 
-                            // // empty tuple ~ void ~ unit
+                            // empty tuple ~ void ~ unit
                             const emptyTuple = try List.init(allocator, empty);
                             // it's always ordered bacuse it's a tuple, not an unorded list of params
                             emptyTuple.ty.list.ordered = true;
@@ -646,9 +649,7 @@ pub fn Parser() type {
         }
 
         pub fn parseConstraints(self: *Self) Parser().Error!std.ArrayList(Constraint) {
-            if (LOG) {
-                std.debug.print("Start parsrins constraints...\n", .{});
-            }
+            // std.debug.print("Start parsrins constraints...\n", .{});
             const allocator = self.arena.allocator();
 
             var constraints = std.ArrayList(Constraint).init(allocator);
@@ -757,10 +758,6 @@ pub fn Parser() type {
                 self.pos += 1;
                 return .{ .char = self.str[self.pos - 1] };
             }
-
-            // if (self.pos < self.str) {
-            //     self.pos += 1;
-            // }
 
             return .{ .end = {} };
         }
