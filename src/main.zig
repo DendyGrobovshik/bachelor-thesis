@@ -9,6 +9,7 @@ const queryParser = @import("query_parser.zig");
 const Client = @import("driver/client.zig").Client;
 const KotlinClient = @import("driver/kotlin_client.zig").KotlinClient;
 const Tree = @import("engine/tree.zig").Tree;
+const Variance = @import("engine/variance.zig").Variance;
 
 // TODO: it's currently hack, should be removed
 pub var rnd: RndGen = undefined;
@@ -71,6 +72,7 @@ fn demoTree() !void {
 
     // visualizing tree in graph.png
     try tree.draw("graph", allocator);
+    try tree.drawCache("cache", allocator);
 
     { // Searching declarations by types
         const query = try queryParser.parseQuery(allocator, "String -> Int");
@@ -87,10 +89,11 @@ fn demoTree() !void {
         const out = try queryParser.parseQuery(allocator, "Bool");
 
         var timer = try std.time.Timer.start();
-        const res = try tree.composeExpression(in.ty, out.ty);
-        print("TIME composeExpression: {}\n", .{std.fmt.fmtDuration(timer.read())});
+        const res = try tree.composeExpressions(in.ty, out.ty);
+        print("TIME composeExpressions: {}\n", .{std.fmt.fmtDuration(timer.read())});
 
-        for (res.items) |expr| {
+        var it = res.keyIterator();
+        while (it.next()) |expr| {
             print("Candidate expression: {any}\n", .{expr});
         }
     }
