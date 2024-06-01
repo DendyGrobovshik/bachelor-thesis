@@ -57,13 +57,6 @@ pub fn fixLabel(label: []const u8, allocator: Allocator) ![]const u8 {
     return try fixName(label, allocator);
 }
 
-pub fn preprocessDeclaration(allocator: Allocator, decl: Declaration) EngineError!Declaration {
-    const ty: *Type = try allocator.create(Type);
-    ty.* = decl.type;
-
-    return .{ .type = (try recursiveTypeProcessor(allocator, ty)).*, .name = decl.name };
-}
-
 pub fn recursiveTypeProcessor(allocator: Allocator, ty: *Type) !*Type {
     std.debug.print("recursive type processor: {s}\n", .{ty});
     switch (ty.*) {
