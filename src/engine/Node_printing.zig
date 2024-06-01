@@ -8,18 +8,6 @@ const Node = @import("Node.zig");
 const TypeNode = @import("TypeNode.zig");
 const constants = @import("constants.zig");
 
-pub fn byId(self: *Node, allocator: Allocator) Allocator.Error![]const u8 {
-    var result: usize = 0;
-
-    for (self.by.followings.items, 0..) |following, i| {
-        if (following.to == self) {
-            result = i;
-        }
-    }
-
-    return try std.fmt.allocPrint(allocator, "{}", .{result});
-}
-
 pub fn notEmptyTypeNodes(self: *Node, allocator: Allocator) anyerror!std.ArrayList(*TypeNode) {
     var result = std.ArrayList(*TypeNode).init(allocator);
 
@@ -47,15 +35,31 @@ pub fn notEmptyTypeNodes(self: *Node, allocator: Allocator) anyerror!std.ArrayLi
     return result;
 }
 
-pub fn fullPathName(self: *Node, allocator: Allocator) Allocator.Error![]const u8 {
-    if (self.by == &constants.PREROOT) {
+/// Collect path of types from ROOT to current Node as string.
+// Append index of Following for which the transition was made
+pub fn stringPath(current: *Node, allocator: Allocator) Allocator.Error![]const u8 {
+    if (current.by == &constants.PREROOT) {
         return "";
     }
 
     return try std.fmt.allocPrint(allocator, "{s}{s}", .{
-        try self.by.fullPathName(allocator),
-        try self.byId(allocator),
+        try current.by.stringPath(allocator),
+        try byFollowingIndex(current, allocator),
     });
+}
+
+/// Return string representation of index of following by which
+/// the transition from previous TypeNode to current Node was made.
+fn byFollowingIndex(self: *Node, allocator: Allocator) Allocator.Error![]const u8 {
+    var result: usize = 0;
+
+    for (self.by.followings.items, 0..) |following, i| {
+        if (following.to == self) {
+            result = i;
+        }
+    }
+
+    return try std.fmt.allocPrint(allocator, "{}", .{result});
 }
 
 pub fn labelName(self: *Node, allocator: Allocator) Allocator.Error![]const u8 {
@@ -63,8 +67,8 @@ pub fn labelName(self: *Node, allocator: Allocator) Allocator.Error![]const u8 {
         return "";
     }
 
-    const following = utils.followingTo(self);
-    const arrow = following.arrow();
+    const byFollowing = utils.followingTo(self);
+    const arrow = byFollowing.arrow();
     return self.by.partName(arrow, allocator);
 }
 
@@ -73,7 +77,7 @@ pub fn isEmpty(self: *Node) bool {
     return self.endings.items.len == 0 and
         self.named.count() == 0 and
         (self.universal.followings.items.len == 0 and
-        self.universal.childs.count() == 2 and // open and closing
+        self.universal.childs.count() == 2 and // opening and closing
         self.opening.followings.items.len == 0 and
         self.opening.childs.count() == 0 and
         self.closing.followings.items.len == 0 and
@@ -87,7 +91,7 @@ pub fn draw(self: *Node, file: std.fs.File, allocator: Allocator) anyerror!void 
 
     const typeNodes = try self.notEmptyTypeNodes(allocator);
 
-    try file.writeAll(try std.fmt.allocPrint(allocator, "subgraph cluster_{s}", .{try self.fullPathName(allocator)}));
+    try file.writeAll(try std.fmt.allocPrint(allocator, "subgraph cluster_{s}", .{try self.stringPath(allocator)}));
     try file.writeAll("{\n");
     try file.writeAll("style=\"rounded\"\n");
     var label = try self.labelName(allocator);
@@ -119,7 +123,7 @@ pub fn draw(self: *Node, file: std.fs.File, allocator: Allocator) anyerror!void 
 
 pub fn getTypeInAngles(node: *Node, allocator: Allocator) Allocator.Error![]const u8 {
     // it collect type until matching opening node
-    // TODO: here is cringe idea: suffix = prefixsuffix - prefix
+    // simple idea: suffix = prefixsuffix - prefix
     const presuf = try node.labelName(allocator);
     const open = utils.getOpenParenthesis(node.by);
     const pre = try open.followings.getLast().to.labelName(allocator); //TODO: check if it's always one outcoming from open parenthesis

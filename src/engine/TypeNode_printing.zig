@@ -44,16 +44,17 @@ pub fn color(self: *TypeNode) []const u8 {
     };
 }
 
-pub fn fullPathName(self: *TypeNode, allocator: Allocator) Allocator.Error![]const u8 {
+/// string path to Node of current TypeNode + name of current TypeNode
+pub fn stringPath(self: *TypeNode, allocator: Allocator) Allocator.Error![]const u8 {
     return try std.fmt.allocPrint(allocator, "{s}{s}", .{
-        try self.of.fullPathName(allocator),
+        try self.of.stringPath(allocator),
         try self.name(allocator),
     });
 }
 
 pub fn draw(self: *TypeNode, file: std.fs.File, allocator: Allocator) anyerror!void {
     try file.writeAll(try std.fmt.allocPrint(allocator, "{s}[label=\"{s}\",color={s},style=filled];\n", .{
-        try self.fullPathName(allocator),
+        try self.stringPath(allocator),
         try utils.fixLabel(try self.labelName(allocator), allocator),
         self.color(),
     }));
@@ -64,8 +65,8 @@ pub fn drawConnections(self: *TypeNode, file: std.fs.File, allocator: Allocator)
     while (it.next()) |child| {
         if (child.*.notEmpty()) {
             try file.writeAll(try std.fmt.allocPrint(allocator, "{s} -> {s}[color=red,style=filled];\n", .{
-                try self.fullPathName(allocator),
-                try child.*.fullPathName(allocator),
+                try self.stringPath(allocator),
+                try child.*.stringPath(allocator),
             }));
         }
     }
@@ -73,9 +74,9 @@ pub fn drawConnections(self: *TypeNode, file: std.fs.File, allocator: Allocator)
     for (self.followings.items) |following| {
         if (!following.to.isEmpty()) {
             try file.writeAll(try std.fmt.allocPrint(allocator, "{s} -> {s}[lhead=cluster_{s},color=\"{s}\",style=filled];\n", .{
-                try self.fullPathName(allocator),
-                try following.to.universal.fullPathName(allocator),
-                try following.to.fullPathName(allocator),
+                try self.stringPath(allocator),
+                try following.to.universal.stringPath(allocator),
+                try following.to.stringPath(allocator),
                 following.color(),
             }));
 
@@ -84,6 +85,7 @@ pub fn drawConnections(self: *TypeNode, file: std.fs.File, allocator: Allocator)
     }
 }
 
+/// Name of syntetic contains of names of minorants of nominative upper bounds.
 pub fn synteticName(self: *TypeNode, isLabel: bool, allocator: Allocator) Allocator.Error![]const u8 {
     var result = std.ArrayList(u8).init(allocator);
 

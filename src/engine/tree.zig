@@ -184,7 +184,6 @@ pub const Tree = struct {
         return self.findDeclarationsWithVariants(typec_, Variance.invariant);
     }
 
-    // TODO: prove that they are unique
     pub fn findDeclarationsWithVariants(self: *Tree, typec_: *TypeC, variance: Variance) EngineError!AutoHashSet(*Declaration) {
         const typec = utils.orderTypeParameters(typec_, self.allocator);
 

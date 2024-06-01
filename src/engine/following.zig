@@ -48,13 +48,6 @@ pub const Following = struct {
         };
     }
 
-    pub fn isGnominative(self: *Following) bool {
-        return switch (self.kind) {
-            .generic => true,
-            else => false,
-        };
-    }
-
     pub fn eq(self: *Following, other: *Following) bool {
         return self.kind == other.kind; // TODO: and backlink are equal
     }

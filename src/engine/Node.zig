@@ -41,11 +41,6 @@ endings: std.ArrayList(*Declaration),
 by: *TypeNode,
 
 pub fn init(allocator: Allocator, by: *TypeNode) Allocator.Error!*Node {
-    const named = std.StringHashMap(*TypeNode).init(allocator);
-    const syntetics = std.ArrayList(*TypeNode).init(allocator);
-
-    const endings = std.ArrayList(*Declaration).init(allocator);
-
     const self = try allocator.create(Node);
 
     const universal = try TypeNode.init(allocator, TypeNode.Kind.universal, self);
@@ -55,12 +50,12 @@ pub fn init(allocator: Allocator, by: *TypeNode) Allocator.Error!*Node {
     try universal.setAsParentTo(closing);
 
     self.* = .{
-        .named = named,
-        .syntetics = syntetics,
+        .named = std.StringHashMap(*TypeNode).init(allocator),
+        .syntetics = std.ArrayList(*TypeNode).init(allocator),
+        .endings = std.ArrayList(*Declaration).init(allocator),
         .universal = universal,
         .opening = opening,
         .closing = closing,
-        .endings = endings,
         .by = by,
     };
 
@@ -129,13 +124,13 @@ pub fn searchNominative(self: *Node, next: *TypeC, variance: Variance, storage: 
 
         try self.searchGeneric(next, nextVariance, storage, allocator);
     } else {
-        var typeNode = self.named.get(next.ty.nominative.name) orelse try self.createAndInsertNamed(next, allocator);
+        var typeNode = self.named.get(next.ty.nominative.name) orelse try self.createAndInsertNominative(next, allocator);
 
         try typeNode.collectAllWithVariance(variance, storage);
     }
 }
 
-fn createAndInsertNamed(self: *Node, next: *TypeC, allocator: Allocator) EngineError!*TypeNode {
+fn createAndInsertNominative(self: *Node, next: *TypeC, allocator: Allocator) EngineError!*TypeNode {
     // std.debug.print("createAndInsertNamed\n", .{});
     const name = try utils.simplifyName(next.ty.nominative.name, allocator);
 
