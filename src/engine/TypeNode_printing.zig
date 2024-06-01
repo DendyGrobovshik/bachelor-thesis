@@ -6,6 +6,7 @@ const Allocator = @import("std").mem.Allocator;
 const main = @import("../main.zig");
 const utils = @import("utils.zig");
 const tree = @import("tree.zig");
+const subtyping = @import("subtyping.zig");
 
 const AutoHashSet = utils.AutoHashSet;
 const Following = @import("following.zig").Following;
@@ -85,58 +86,28 @@ pub fn drawConnections(self: *TypeNode, file: std.fs.File, allocator: Allocator)
     }
 }
 
-/// Name of syntetic contains of names of minorants of nominative upper bounds.
 pub fn synteticName(self: *TypeNode, isLabel: bool, allocator: Allocator) Allocator.Error![]const u8 {
     var result = std.ArrayList(u8).init(allocator);
-
     const delimiter = if (isLabel) " & " else "and";
 
-    var it = self.parents.keyIterator();
-    while (it.next()) |parent| {
+    const minorants = try subtyping.getMinorantOfNominativeUpperBounds(self, allocator);
+
+    var it = minorants.keyIterator();
+    while (it.next()) |minorant| {
         if (isLabel) {
-            if (parent.*.of != self.of) {
-                const res = try parent.*.partName(" -> ", allocator);
+            if (minorant.*.of != self.of) {
+                const res = try minorant.*.partName(" -> ", allocator);
                 try result.appendSlice(res[0 .. res.len - 4]); // TODO: fix or remove arrow
             } else {
-                try result.appendSlice(try parent.*.labelName(allocator));
+                try result.appendSlice(try minorant.*.labelName(allocator));
             }
             try result.appendSlice(delimiter);
         } else {
-            try result.appendSlice(try parent.*.name(allocator));
+            try result.appendSlice(try minorant.*.name(allocator));
             try result.appendSlice(delimiter);
         }
-    }
-
-    if (self.parents.count() > 0) {
-        return removeDuplicates(result.items[0 .. result.items.len - 3], delimiter, allocator);
-    }
-
-    return removeDuplicates(result.items, delimiter, allocator); // TODO: check allocator releasing
-}
-
-// TODO: remove this updating logic with finding minorants
-fn removeDuplicates(str: []const u8, delimiter: []const u8, allocator: Allocator) Allocator.Error![]const u8 {
-    var parts = std.StringHashMap(void).init(allocator);
-
-    var it = std.mem.split(u8, str, delimiter);
-    while (it.next()) |part| {
-        try parts.put(std.mem.trim(u8, part, " "), {});
-    }
-
-    var result = std.ArrayList(u8).init(allocator);
-
-    var partsIt = parts.keyIterator();
-    while (partsIt.next()) |part| {
-        if (std.mem.eql(u8, part.*, "")) {
-            std.debug.print("EMPTY!\n", .{});
-        }
-
-        try result.appendSlice(part.*);
-        try result.appendSlice(delimiter);
-    }
-
-    if (parts.count() > 1 and result.items.len > 0) {
-        return result.items[0 .. result.items.len - 3];
+    } else {
+        return result.items[0 .. result.items.len - delimiter.len];
     }
 
     return result.items;
