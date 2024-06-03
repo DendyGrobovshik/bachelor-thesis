@@ -47,6 +47,8 @@ pub const MessageKind = enum {
     status,
     search,
     declIds,
+    whoAreTheParentsOf,
+    theParentsAre,
 };
 
 pub const Message = union(MessageKind) {
@@ -58,6 +60,8 @@ pub const Message = union(MessageKind) {
     status: Status,
     search: []const u8,
     declIds: []const usize,
+    whoAreTheParentsOf: []const u8,
+    theParentsAre: []const []const u8,
 };
 
 // TODO: free memory

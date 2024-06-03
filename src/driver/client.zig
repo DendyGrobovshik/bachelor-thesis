@@ -131,6 +131,11 @@ pub const Client = struct {
                     const message = Message{ .answer = answer };
                     _ = try self.write(Message, message);
                 },
+                .whoAreTheParentsOf => {
+                    const parents = utils.getParentsOfType(serverMessage.whoAreTheParentsOf);
+
+                    _ = try self.write(Message, Message{ .theParentsAre = parents });
+                },
                 .status => {
                     if (serverMessage.status == Status.finished) {
                         break;

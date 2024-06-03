@@ -383,6 +383,26 @@ pub fn defaultSubtype(parent: []const u8, child: []const u8) bool {
     return false;
 }
 
+// For building demo tree
+pub fn getParentsOfType(ty: []const u8) []const []const u8 {
+    const Map = struct { []const u8, []const []const u8 };
+
+    const stringParents = [_][]const u8{"Collection<U8>"};
+    const subOfThreeParents = [_][]const u8{ "IntEven", "String", "Printable" };
+    const parentsOf = [_]Map{
+        .{ "String", &stringParents },
+        .{ "SubOfThree", &subOfThreeParents },
+    };
+
+    for (parentsOf) |map| {
+        if (std.mem.eql(u8, ty, map[0])) {
+            return map[1];
+        }
+    }
+
+    return &[_][]const u8{}; // TODO: ensure its safe
+}
+
 pub fn isSubset(comptime T: type, subset: *AutoHashSet(T), superset: *AutoHashSet(T)) bool {
     var subsetIt = subset.keyIterator();
     while (subsetIt.next()) |sub| {
@@ -418,4 +438,125 @@ pub fn setDifference(comptime T: type, set: *AutoHashSet(T), subset: *AutoHashSe
     }
 
     return result;
+}
+
+pub fn onlySuffix(prefix: []const u8, full: []const u8) []const u8 {
+    var suffix: []const u8 = "";
+
+    // handling prefix="(("" and full"(Array<U> ->"
+    for (0..prefix.len) |start| {
+        const suffixOfPrefix = prefix[0..(prefix.len - start)];
+        const match = std.mem.eql(u8, suffixOfPrefix, full[0..(prefix.len - start)]);
+
+        if (match) {
+            suffix = full[(prefix.len - start)..];
+            break;
+        }
+    }
+
+    if (suffix.len == 0) {
+        std.debug.print("Error: prefix='{s}', full='{s}', suffix='{s}'. Suffix shouldn't be empty.\n", .{
+            prefix,
+            full,
+            suffix,
+        });
+        std.debug.assert(suffix.len != 0);
+    }
+
+    return suffix;
+}
+
+const TypeString = struct {
+    str: []const u8,
+    by: *Following,
+};
+
+fn unwrapParenthesis(str: []const u8) []const u8 {
+    if (str.len == 0) {
+        return str;
+    }
+
+    if (str[0] == '(' and str[str.len - 1] == ')') {
+        return str[1 .. str.len - 1];
+    }
+
+    return str;
+}
+
+/// return string string representation of type ends in `end` TypeNode
+pub fn typeToString(end: *TypeNode, allocator: Allocator) EngineError!TypeString {
+    std.debug.assert(end.kind != TypeNode.Kind.opening);
+
+    var fKind: ?Following.Kind = null;
+    var prev = end;
+    var result: []const u8 = "";
+    var following: *Following = undefined;
+    out: while (true) {
+        switch (prev.kind) {
+            .closing => {
+                const inner = try closingTypeToString(prev, allocator);
+                result = try std.fmt.allocPrint(allocator, "{s}{s}", .{ inner.str, result });
+                following = inner.by;
+            },
+            .nominative, .universal => { // TODO: different generics should have different names
+                const name = if (prev.kind == TypeNode.Kind.universal) "T" else prev.kind.nominative;
+
+                result = try std.fmt.allocPrint(allocator, "{s}{s}", .{ name, result });
+
+                following = followingTo(prev.of);
+            },
+            else => {
+                const last = try typeToString(prev, allocator);
+                result = try std.fmt.allocPrint(allocator, "{s}{s}", .{ last.str, result });
+
+                following = last.by;
+            },
+        }
+        prev = following.to.by;
+
+        if (fKind) |kind| {
+            if (kind != following.kind) {
+                break :out;
+            }
+        } else {
+            fKind = following.kind;
+        }
+
+        if (following.kind == Following.Kind.fake) {
+            break :out;
+        }
+
+        result = try std.fmt.allocPrint(allocator, "{s}{s}", .{ following.arrow(), result });
+    }
+
+    return .{ .str = result, .by = following };
+}
+
+/// return type representation that wrapped in parenthesis endings with `closing`
+pub fn closingTypeToString(closing: *TypeNode, allocator: Allocator) EngineError!TypeString {
+    std.debug.assert(closing.kind == TypeNode.Kind.closing);
+    const prev = closing.of.by;
+
+    switch (prev.kind) {
+        .gnominative => {
+            const endOfParameters = prev.of.by;
+            const parameters = try typeToString(endOfParameters, allocator);
+
+            return .{
+                .str = try std.fmt.allocPrint(allocator, "{s}<{s}>", .{
+                    prev.kind.gnominative,
+                    unwrapParenthesis(parameters.str),
+                }),
+                .by = parameters.by,
+            };
+        },
+        else => {}, // else type in parenthesis either tuple or functional
+    }
+
+    const ty = try typeToString(prev, allocator);
+
+    return .{
+        .str = try std.fmt.allocPrint(allocator, "({s})", .{ty.str}),
+        .by = followingTo(ty.by.to.by.of),
+    };
 }

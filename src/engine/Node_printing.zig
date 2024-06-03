@@ -127,22 +127,6 @@ pub fn getTypeInAngles(node: *Node, allocator: Allocator) Allocator.Error![]cons
     const presuf = try node.labelName(allocator);
     const open = utils.getOpenParenthesis(node.by);
     const pre = try open.followings.getLast().to.labelName(allocator); //TODO: check if it's always one outcoming from open parenthesis
-    var suf: []const u8 = "";
-    // handling pre="(("" and presuf"(Array<U> ->"
-    for (0..pre.len) |start| {
-        const suffixOfPrefix = pre[0..(pre.len - start)];
-        const match = std.mem.eql(u8, suffixOfPrefix, presuf[0..(pre.len - start)]);
 
-        if (match) {
-            suf = presuf[(pre.len - start)..];
-            break;
-        }
-    }
-
-    if (suf.len == 0) {
-        std.debug.print("Error: prefix='{s}', full='{s}', suffix='{s}'. Suffix shouldn't be empty.\n", .{ pre, presuf, suf });
-        unreachable;
-    }
-
-    return utils.trimRightArrow(suf);
+    return utils.trimRightArrow(utils.onlySuffix(pre, presuf));
 }

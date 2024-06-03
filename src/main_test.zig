@@ -11,6 +11,7 @@ comptime {
         @import("engine/tests/search_with_variance_test.zig"),
         @import("engine/tests/expression_composing.zig"),
         @import("engine/tests/tree_tests.zig"),
+        @import("engine/tests/type_printing.zig"),
     };
     for (test_files) |test_file| {
         std.testing.refAllDeclsRecursive(test_file);

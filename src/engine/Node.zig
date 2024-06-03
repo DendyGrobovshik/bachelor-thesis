@@ -104,7 +104,7 @@ pub fn search(self: *Node, next: *TypeC, allocator: Allocator) EngineError!*Type
 // TODO: distinguish allocation while inserting
 // do exact search or insert if no present
 pub fn searchWithVariance(self: *Node, next: *TypeC, variance: Variance, storage: *AutoHashSet(*TypeNode), allocator: Allocator) EngineError!void {
-    // std.debug.print("searchWithVariance: {s} {}\n", .{ next.ty, variance });
+    // std.debug.print("searchWithVariance: {s} {} node:{s}\n", .{ next.ty, variance, try self.labelName(allocator) });
     switch (next.ty.*) {
         .nominative => try self.searchNominative(next, variance, storage, allocator),
         .function => try self.searchFunction(next, variance, storage, allocator),
@@ -260,7 +260,10 @@ pub fn searchList(self: *Node, next: *TypeC, variance: Variance, storage: *AutoH
 
         var currentNodesIt = currentNodes.keyIterator();
         while (currentNodesIt.next()) |currentNode| {
-            try currentNode.*.searchWithVariance(nextType, listVariance, &prevTypeNodes, allocator);
+            switch (nextType.ty.*) {
+                .function => try currentNode.*.searchHOF(nextType, listVariance, &prevTypeNodes, allocator),
+                else => try currentNode.*.searchWithVariance(nextType, listVariance, &prevTypeNodes, allocator),
+            }
         }
 
         // TODO: free!!!

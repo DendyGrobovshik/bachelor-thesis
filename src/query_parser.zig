@@ -476,6 +476,10 @@ pub fn Parser() type {
                         self.pos -= 1;
                         return baseType;
                     }
+                    if (nextToken.char == '>') {
+                        self.pos -= 1;
+                        return baseType;
+                    }
 
                     var types = std.ArrayList(*TypeC).init(allocator);
                     try types.append(baseType);

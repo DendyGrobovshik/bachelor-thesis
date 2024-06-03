@@ -131,6 +131,18 @@ pub const Server = struct {
         }
     }
 
+    pub fn getParentsOf(self: *Server, ty: []const u8) Error![]const []const u8 {
+        try self.write(Message, Message{ .whoAreTheParentsOf = ty });
+
+        const message = try self.read(Message);
+
+        // NOTE: in case of parallel fact checking, the target type of result must also be checked.
+        switch (message) {
+            .theParentsAre => return message.theParentsAre,
+            else => return Error.UnexpectedMessage,
+        }
+    }
+
     pub fn answerQuestions(self: *Server, tree: *Tree) EngineError!void {
         while (true) {
             const message = try self.read(Message);
