@@ -2,6 +2,7 @@ const std = @import("std");
 const Allocator = @import("std").mem.Allocator;
 
 const main = @import("../main.zig");
+const constants = @import("constants.zig");
 
 const EngineError = @import("error.zig").EngineError;
 const Declaration = @import("entities.zig").Declaration;
@@ -105,7 +106,10 @@ pub fn followingTo(node: *Node) *Following {
         }
     }
 
-    unreachable;
+    std.debug.panic("followingTo='{s}', is PREROOT={}\n", .{
+        node.labelName(std.heap.page_allocator) catch unreachable,
+        node.by == &constants.PREROOT,
+    });
 }
 
 pub fn trimRightArrow(str: []const u8) []const u8 {
@@ -383,17 +387,27 @@ pub fn defaultSubtype(parent: []const u8, child: []const u8) bool {
     return false;
 }
 
+const Map = struct { []const u8, []const []const u8 };
+
+const stringParents = [_][]const u8{"Collection<U8>"};
+const subOfThreeParents = [_][]const u8{ "IntEven", "String", "Printable" };
+const intParents = [_][]const u8{ "Int", "Printable" };
+const collectionParents = [_][]const u8{"Printable"};
+const AnBnCnParents = [_][]const u8{ "An", "Bn", "Cn" };
+const AnDnParents = [_][]const u8{ "An", "Dn" };
+const YnParents = [_][]const u8{"An"};
+const parentsOf = [_]Map{
+    .{ "String", &stringParents },
+    .{ "SubOfThree", &subOfThreeParents },
+    .{ "IntEven", &intParents },
+    .{ "Collection", &collectionParents },
+    .{ "AnBnCn", &AnBnCnParents },
+    .{ "AnDn", &AnDnParents },
+    .{ "Yn", &YnParents },
+};
+
 // For building demo tree
 pub fn getParentsOfType(ty: []const u8) []const []const u8 {
-    const Map = struct { []const u8, []const []const u8 };
-
-    const stringParents = [_][]const u8{"Collection<U8>"};
-    const subOfThreeParents = [_][]const u8{ "IntEven", "String", "Printable" };
-    const parentsOf = [_]Map{
-        .{ "String", &stringParents },
-        .{ "SubOfThree", &subOfThreeParents },
-    };
-
     for (parentsOf) |map| {
         if (std.mem.eql(u8, ty, map[0])) {
             return map[1];
@@ -484,8 +498,10 @@ fn unwrapParenthesis(str: []const u8) []const u8 {
 }
 
 /// return string string representation of type ends in `end` TypeNode
-pub fn typeToString(end: *TypeNode, allocator: Allocator) EngineError!TypeString {
+pub fn typeToString(end: *TypeNode, allocator: Allocator, eager: bool) EngineError!TypeString {
+    // std.debug.print("typeToString='{s}'\n", .{try end.name(allocator)});
     std.debug.assert(end.kind != TypeNode.Kind.opening);
+    std.debug.assert(end.kind != TypeNode.Kind.gnominative);
 
     var fKind: ?Following.Kind = null;
     var prev = end;
@@ -503,10 +519,23 @@ pub fn typeToString(end: *TypeNode, allocator: Allocator) EngineError!TypeString
 
                 result = try std.fmt.allocPrint(allocator, "{s}{s}", .{ name, result });
 
+                if (prev.of.by == &constants.PREROOT) {
+                    break :out;
+                }
+                following = followingTo(prev.of);
+            },
+            .syntetic => { // TODO: try to collapse with previous
+                result = try std.fmt.allocPrint(allocator, "{s}{s}", .{
+                    try prev.labelName(allocator),
+                    result,
+                });
+                if (prev.of.by == &constants.PREROOT) {
+                    break :out;
+                }
                 following = followingTo(prev.of);
             },
             else => {
-                const last = try typeToString(prev, allocator);
+                const last = try typeToString(prev, allocator, eager);
                 result = try std.fmt.allocPrint(allocator, "{s}{s}", .{ last.str, result });
 
                 following = last.by;
@@ -522,7 +551,7 @@ pub fn typeToString(end: *TypeNode, allocator: Allocator) EngineError!TypeString
             fKind = following.kind;
         }
 
-        if (following.kind == Following.Kind.fake) {
+        if (following.kind == Following.Kind.fake or eager) {
             break :out;
         }
 
@@ -534,13 +563,14 @@ pub fn typeToString(end: *TypeNode, allocator: Allocator) EngineError!TypeString
 
 /// return type representation that wrapped in parenthesis endings with `closing`
 pub fn closingTypeToString(closing: *TypeNode, allocator: Allocator) EngineError!TypeString {
+    // std.debug.print("closingTypeToString\n", .{});
     std.debug.assert(closing.kind == TypeNode.Kind.closing);
     const prev = closing.of.by;
 
     switch (prev.kind) {
         .gnominative => {
             const endOfParameters = prev.of.by;
-            const parameters = try typeToString(endOfParameters, allocator);
+            const parameters = try typeToString(endOfParameters, allocator, false);
 
             return .{
                 .str = try std.fmt.allocPrint(allocator, "{s}<{s}>", .{
@@ -553,7 +583,7 @@ pub fn closingTypeToString(closing: *TypeNode, allocator: Allocator) EngineError
         else => {}, // else type in parenthesis either tuple or functional
     }
 
-    const ty = try typeToString(prev, allocator);
+    const ty = try typeToString(prev, allocator, false);
 
     return .{
         .str = try std.fmt.allocPrint(allocator, "({s})", .{ty.str}),

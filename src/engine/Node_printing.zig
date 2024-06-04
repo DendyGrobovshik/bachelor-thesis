@@ -3,12 +3,13 @@ const Allocator = @import("std").mem.Allocator;
 
 const main = @import("../main.zig");
 const utils = @import("utils.zig");
+const constants = @import("constants.zig");
 
 const Node = @import("Node.zig");
 const TypeNode = @import("TypeNode.zig");
-const constants = @import("constants.zig");
+const EngineError = @import("error.zig").EngineError;
 
-pub fn notEmptyTypeNodes(self: *Node, allocator: Allocator) anyerror!std.ArrayList(*TypeNode) {
+pub fn notEmptyTypeNodes(self: *Node, allocator: Allocator) Allocator.Error!std.ArrayList(*TypeNode) {
     var result = std.ArrayList(*TypeNode).init(allocator);
 
     var it = self.named.valueIterator();
@@ -77,14 +78,14 @@ pub fn isEmpty(self: *Node) bool {
     return self.endings.items.len == 0 and
         self.named.count() == 0 and
         (self.universal.followings.items.len == 0 and
-        self.universal.childs.count() == 2 and // opening and closing
+        self.universal.childs.count() == 0 and 
         self.opening.followings.items.len == 0 and
         self.opening.childs.count() == 0 and
         self.closing.followings.items.len == 0 and
         self.closing.childs.count() == 0);
 }
 
-pub fn draw(self: *Node, file: std.fs.File, allocator: Allocator) anyerror!void {
+pub fn draw(self: *Node, file: std.fs.File, allocator: Allocator) EngineError!void {
     if (self.isEmpty()) {
         return;
     }

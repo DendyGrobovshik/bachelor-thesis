@@ -5,13 +5,18 @@ const utils = @import("utils.zig");
 const tree = @import("tree.zig");
 const subtyping = @import("subtyping.zig");
 const main = @import("../main.zig");
+const constants = @import("constants.zig");
+const queryParser = @import("../query_parser.zig");
+const walker = @import("walker.zig");
 
 const Node = @import("Node.zig");
 const TypeNode = @import("TypeNode.zig");
-const constants = @import("constants.zig");
 const Tree = @import("./tree.zig").Tree;
 const Server = @import("../driver/server.zig").Server;
 const EngineError = @import("error.zig").EngineError;
+const AutoHashSet = utils.AutoHashSet;
+const Variance = @import("variance.zig").Variance;
+const Following = @import("following.zig").Following;
 
 pub const Cache = struct {
     const Child = struct {
@@ -57,79 +62,39 @@ pub const Cache = struct {
         return this;
     }
 
-    /// TypeNode arguements are from tree not from cache
+    /// TypeNode arguements are from tree not from cache.
     ///
     // TODO: A < B can be fast checked with knowing of B < A
     pub fn isSubtype(childFromTree: *TypeNode, parentFromTree: *TypeNode) EngineError!bool {
-        // std.debug.print("Cache.isSubtype\n", .{});
+        if (childFromTree.kind == TypeNode.Kind.opening or
+            parentFromTree.kind == TypeNode.Kind.opening)
+        {
+            return false;
+        }
 
-        const self = tree.current.cache;
+        const cache = tree.current.cache;
+        // std.debug.print("Cache.isSubtype '{s}' < '{s}'\n", .{
+        //     try childFromTree.name(cache.allocator),
+        //     try parentFromTree.name(cache.allocator),
+        // });
 
-        self.statistic.total = self.statistic.total + 1;
+        cache.statistic.total = cache.statistic.total + 1;
 
         if (childFromTree.of == parentFromTree.of and parentFromTree.kind == TypeNode.Kind.universal) {
             return true;
         }
+        if (childFromTree.kind == TypeNode.Kind.syntetic or parentFromTree.kind == TypeNode.Kind.syntetic) {
+            // TODO: it's not clear whether here should be checked minorants of nominative upper bounds
+            // NOTE: it's better proof and describe other invariants
+            return false;
+        }
 
-        const childFromCache = try self.mirror(childFromTree);
-        const parentFromCache = try self.mirror(parentFromTree);
+        const childFromCache = try walker.mirrorFromTreeToCache(childFromTree, cache.allocator) orelse return false;
+        const parentFromCache = try walker.mirrorFromTreeToCache(parentFromTree, cache.allocator) orelse return false;
 
         return subtyping.isInUpperBounds(parentFromCache, childFromCache);
     }
 
-    /// searches and adds if necessary TypeNode in cache semantically identical to `target` from tree
-    ///
-    /// This is another mirror.
-    fn mirror(self: *Cache, target: *TypeNode) EngineError!*TypeNode {
-        // TODO: handle if TypeNode is for function
-        // const node = try self.mirrorNode(target.of);
-        const node = self.head;
-
-        switch (target.kind) {
-            .universal => {
-                return node.universal;
-            },
-            .gnominative, .nominative => {
-                const name = switch (target.kind) {
-                    .gnominative => target.kind.gnominative,
-                    .nominative => target.kind.nominative,
-                    else => unreachable,
-                };
-                // std.debug.print("NAME: {s}\n", .{name});
-
-                if (node.named.get(name)) |existing| {
-                    return existing;
-                } else {
-                    const newTypeNode = try TypeNode.init(self.allocator, target.kind, node);
-
-                    try node.named.put(name, newTypeNode);
-
-                    try subtyping.insertNominative(newTypeNode, node, askOracle, self.allocator); // TODO: create arena and free after?
-
-                    return newTypeNode;
-                }
-            },
-            .syntetic => {
-                var constraints = try subtyping.getMinorantOfNominativeUpperBounds(target, self.allocator);
-                return try subtyping.solveConstraintsDefinedPosition(node, &constraints, self.allocator);
-            },
-            .opening => {
-                return node.opening;
-            },
-            .closing => {
-                return node.closing;
-            },
-        }
-    }
-
-    fn mirrorNode(self: *Cache, target: *Node) EngineError!*Node {
-        if (target.by == &constants.PREROOT) {
-            return self.head;
-        }
-
-        const by = try self.mirror(target.by);
-        return by.of;
-    }
 
     fn askOracle(child: *TypeNode, parent: *TypeNode) EngineError!bool {
         if ((child.kind == TypeNode.Kind.opening or
@@ -149,6 +114,37 @@ pub const Cache = struct {
             return try oracle.isSubtype(child, parent);
         } else {
             return utils.defaultSubtype(try parent.name(self.allocator), try child.name(self.allocator));
+        }
+    }
+
+    /// Ask oracle about parents of `ty` and set them.
+    /// `ty` - TypeNode in cache.
+    /// In case no server-client driver established, default `utils.getParentsOfType` oracle is used.
+    pub fn setParentsTo(ty: *TypeNode) EngineError!void {
+        const cache = tree.current.cache;
+
+        cache.statistic.total = cache.statistic.total + 1;
+        cache.statistic.cacheMiss = cache.statistic.cacheMiss + 1;
+
+        const tyStr = try utils.typeToString(ty, cache.allocator, true);
+
+        var rawTypes: []const []const u8 = undefined;
+        if (tree.current.server) |oracle| {
+            rawTypes = try oracle.getParentsOf(tyStr.str);
+        } else {
+            rawTypes = utils.getParentsOfType(tyStr.str);
+        }
+
+        var result = AutoHashSet(*TypeNode).init(cache.allocator);
+        for (rawTypes) |rawType| {
+            const query = try queryParser.parseQuery(cache.allocator, rawType);
+            const searchConfig = .{ .variance = Variance.invariant, .insert = true }; // TODO: check 'insert'
+            try cache.head.searchWithVariance(query.ty, searchConfig, &result, cache.allocator);
+        }
+
+        var it = result.keyIterator();
+        while (it.next()) |parent| {
+            try parent.*.setAsParentTo(ty);
         }
     }
 };

@@ -25,8 +25,16 @@ test "tree.extractAllDecls" {
     for (rawDecls) |rawDecl| {
         const query = try queryParser.parseQuery(allocator, rawDecl.ty);
         const leaf = try searchIndex.sweetLeaf(query.ty, allocator);
-        const printed = try engineUtils.typeToString(leaf, allocator);
+        const printed = try engineUtils.typeToString(leaf, allocator, true);
 
         try std.testing.expectEqualStrings(rawDecl.ty, printed.str);
     }
 }
+
+// TODO: test for syntetic nodes correct name printing
+
+// TODO: here can be fuzzing tests:
+// - generate type
+// - add type in tree
+// - print type
+// - compare it equal to reference

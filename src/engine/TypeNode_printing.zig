@@ -53,7 +53,7 @@ pub fn stringPath(self: *TypeNode, allocator: Allocator) Allocator.Error![]const
     });
 }
 
-pub fn draw(self: *TypeNode, file: std.fs.File, allocator: Allocator) anyerror!void {
+pub fn draw(self: *TypeNode, file: std.fs.File, allocator: Allocator) EngineError!void {
     try file.writeAll(try std.fmt.allocPrint(allocator, "{s}[label=\"{s}\",color={s},style=filled];\n", .{
         try self.stringPath(allocator),
         try utils.fixLabel(try self.labelName(allocator), allocator),

@@ -22,6 +22,7 @@ const Expression = @import("entities.zig").Expression;
 const Server = @import("../driver/server.zig").Server;
 const Mirror = @import("entities.zig").Mirror;
 
+// TODO: threadlocal?
 pub var current: *Tree = undefined;
 
 // TODO: allocator optimization(everywhere)
@@ -108,16 +109,16 @@ pub const Tree = struct {
         // TODO:
     }
 
-    pub fn draw(self: *const Tree, path: []const u8, allocator: Allocator) !void {
+    pub fn draw(self: *const Tree, path: []const u8, allocator: Allocator) EngineError!void {
         try doDraw(self.head, path, allocator);
     }
 
-    pub fn drawCache(self: *const Tree, path: []const u8, allocator: Allocator) !void {
+    pub fn drawCache(self: *const Tree, path: []const u8, allocator: Allocator) EngineError!void {
         try doDraw(self.cache.head, path, allocator);
     }
 
     // uses dot to visualize builded tree
-    pub fn doDraw(node: *Node, path: []const u8, allocator_: Allocator) !void {
+    pub fn doDraw(node: *Node, path: []const u8, allocator_: Allocator) EngineError!void {
         var arena = std.heap.ArenaAllocator.init(allocator_);
         const allocator = arena.allocator();
         defer arena.deinit();
@@ -161,8 +162,20 @@ pub const Tree = struct {
         // std.debug.print("TREE DRAWN...\n", .{});
     }
 
+    /// Do search and insert if needed.
     pub fn sweetLeaf(self: *Tree, typec: *TypeC, allocator: Allocator) EngineError!*TypeNode {
-        return try self.head.search(typec, allocator);
+        const config = .{ .variance = Variance.invariant, .insert = true };
+        if (try self.head.search(typec, config, allocator)) |leaf| {
+            return leaf;
+        } else {
+            std.debug.panic("Leaf was not found or inserted\n", .{});
+        }
+    }
+
+    /// Do search, not insert.
+    pub fn search(self: *Tree, typec: *TypeC, allocator: Allocator) EngineError!?*TypeNode {
+        const config = .{ .variance = Variance.invariant, .insert = false };
+        return try self.head.search(typec, config, allocator);
     }
 
     // no comma + generic transformed to func
@@ -185,10 +198,11 @@ pub const Tree = struct {
     }
 
     pub fn findDeclarationsWithVariants(self: *Tree, typec_: *TypeC, variance: Variance) EngineError!AutoHashSet(*Declaration) {
+        const searchConfig = .{ .variance = variance, .insert = false };
         const typec = utils.orderTypeParameters(typec_, self.allocator);
 
         var leafs = AutoHashSet(*TypeNode).init(self.allocator);
-        try self.head.searchWithVariance(typec, variance, &leafs, self.allocator);
+        try self.head.searchWithVariance(typec, searchConfig, &leafs, self.allocator);
 
         var result = try self.getDeclsOfLeafs(typec, &leafs);
 
@@ -197,7 +211,7 @@ pub const Tree = struct {
             const ordered = utils.orderTypeParameters(decurried, self.allocator);
 
             var leafs2 = AutoHashSet(*TypeNode).init(self.allocator);
-            try self.head.searchWithVariance(ordered, variance, &leafs2, self.allocator);
+            try self.head.searchWithVariance(ordered, searchConfig, &leafs2, self.allocator);
             var leafs2It = leafs2.keyIterator();
             while (leafs2It.next()) |leaf2| {
                 const following2 = try leaf2.*.getFollowing(try utils.getBacklink(ordered), Following.Kind.arrow, self.allocator);
@@ -260,10 +274,11 @@ pub const Tree = struct {
         return try composeMirrors(&mirrors, out, outVariance, self.allocator);
     }
 
-    /// return all nodes with path equal to `by` type which start in `startsIn` according to `variacne`
+    /// return all nodes with path equal to `by` type which start in `startsIn` according to `variance`
     fn nodesBy(by: *TypeC, startsIn: *Node, variance: Variance, allocator: Allocator) EngineError!AutoHashSet(*Node) {
         var leafsX_starts = AutoHashSet(*TypeNode).init(allocator);
-        try startsIn.searchWithVariance(by, variance, &leafsX_starts, allocator);
+        const searchConfig = .{ .variance = variance, .insert = false };
+        try startsIn.searchWithVariance(by, searchConfig, &leafsX_starts, allocator);
 
         var result = AutoHashSet(*Node).init(allocator);
 
@@ -283,8 +298,8 @@ pub const Tree = struct {
         var it = starts.keyIterator();
         while (it.next()) |start| {
             // std.debug.print("Mirror Walk: '{s}' and '{s}'\n", .{
-            //     try x_start.*.labelName(allocator),
-            //     try self.head.labelName(allocator),
+            //     try start.*.labelName(allocator),
+            //     try with.labelName(allocator),
             // });
             try start.*.mirrorWalk(with, &result, allocator);
         }

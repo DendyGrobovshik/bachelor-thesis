@@ -3,6 +3,7 @@ const Allocator = @import("std").mem.Allocator;
 
 const utils = @import("utils.zig");
 const tree = @import("tree.zig");
+const walker = @import("walker.zig");
 
 const AutoHashSet = utils.AutoHashSet;
 const Node = @import("Node.zig");
@@ -27,6 +28,43 @@ pub fn isInUpperBounds(what: *TypeNode, of: *TypeNode) bool {
     return false;
 }
 
+// TODO: !!! not yet clear how to map syntetic between sybtyping graphs
+// /// Set neigbours to type ends in `ty` TypeNode from tree.
+// /// It set not only parents but also childs that not yet assigned because of parent `ty` appers later.
+// pub fn setNeighbours(ty: *TypeNode, allocator: Allocator) EngineError!void {
+//     const tyInCache = try walker.mirrorFromTreeToCache(ty, allocator);
+
+//     var it = tyInCache.parents.keyIterator();
+//     for (it.next()) |parentInCache| {
+//         try walker.setAncestorsOfTypeFromCachePresentedInTree(ty, parentInCache, allocator);
+//     }
+
+//     it = tyInCache.childs.keyIterator();
+//     for (it.next()) |childInCache| {
+//         try walker.getDescendantsOfTypeFromCachePresentedInTree(ty, childInCache, allocator);
+//     }
+
+//     // if was A>C
+//     // and now it A>B>C
+//     // then A>C should be removed
+//     const F = struct { parent: *TypeNode, child: *TypeNode };
+//     var toRemove = std.ArrayList(F).init(allocator);
+
+//     var childsIt = ty.childs.keyIterator();
+//     while (childsIt.next()) |child| {
+//         var childParentsIt = child.*.parents.keyIterator();
+//         while (childParentsIt.next()) |childParent| {
+//             if (ty.parents.contains(childParent.*)) {
+//                 try toRemove.append(.{ .parent = childParent.*, .child = child.* });
+//             }
+//         }
+//     }
+
+//     for (toRemove.items) |f| {
+//         f.parent.removeChild(f.child);
+//     }
+// }
+
 /// Inserting nominative in subtyping graph.
 /// Set all the childs and parents to `it`.
 pub fn insertNominative(
@@ -38,6 +76,7 @@ pub fn insertNominative(
     // std.debug.print("insertNominative: {s}\n", .{try it.name(allocator)});
     var upperBounds = AutoHashSet(*TypeNode).init(allocator);
     try upperBounds.put(to.universal, {});
+    // TODO: opening and closing are not childs of universal, is't okay?
 
     var incomparable = AutoHashSet(*TypeNode).init(allocator);
 
@@ -72,14 +111,23 @@ pub fn insertNominative(
         const parent = minorantsOfUpperBoundsIt.next().?.*;
         try parent.setAsParentTo(it);
     } else {
-        const synteticParent = try solveConstraintsDefinedPosition(to, &minorantsOfUpperBounds, allocator);
+        const synteticParent = try solveConstraintsDefinedPosition(
+            to,
+            &minorantsOfUpperBounds,
+            allocator,
+        );
         try synteticParent.setAsParentTo(it);
     }
 
     // Some successors of not comparable TypeNode can be child of currently inserted.
     // NOTE: it's slow operation (checking all incomparable recursivelly is terrible)
     // It can be easily optimized if childs of nominative is known.
-    try setAsParentToSuccessorsOfIncomparableIfNeeded(it, &incomparable, isSubtype, allocator); // TODO: free
+    try setAsParentToSuccessorsOfIncomparableIfNeeded(
+        it,
+        &incomparable,
+        isSubtype,
+        allocator,
+    ); // TODO: free
 }
 
 pub fn setAsParentToSuccessorsOfIncomparableIfNeeded(
@@ -117,7 +165,11 @@ pub fn setAsParentToSuccessorsOfIncomparableIfNeeded(
     }
 }
 
-pub fn solveConstraintsDefinedPosition(node: *Node, constraints: *AutoHashSet(*TypeNode), allocator: Allocator) EngineError!*TypeNode {
+pub fn solveConstraintsDefinedPosition(
+    node: *Node,
+    constraints: *AutoHashSet(*TypeNode),
+    allocator: Allocator,
+) EngineError!*TypeNode {
     // std.debug.print("solveConstraintsDefinedPosition {}\n", .{constraints.count()});
 
     if (constraints.count() == 0) {
@@ -177,7 +229,12 @@ pub fn solveConstraintsDefinedPosition(node: *Node, constraints: *AutoHashSet(*T
 /// Get or insert syntetic between `parent` and `child` with `middleMinorants` nominative upper bound minorants.
 //
 // In case of inserting middle - child has other minorants and have to be moved in another syntetic
-fn getOrInsertSyntetic(parent: *TypeNode, child: *TypeNode, middleMinorants: *AutoHashSet(*TypeNode), allocator: Allocator) EngineError!*TypeNode {
+fn getOrInsertSyntetic(
+    parent: *TypeNode,
+    child: *TypeNode,
+    middleMinorants: *AutoHashSet(*TypeNode),
+    allocator: Allocator,
+) EngineError!*TypeNode {
     var childMinorants = try getMinorantOfNominativeUpperBounds(child, allocator);
 
     if (childMinorants.count() == middleMinorants.count()) {
@@ -214,15 +271,23 @@ fn getOrInsertSyntetic(parent: *TypeNode, child: *TypeNode, middleMinorants: *Au
     return middle;
 }
 
-// get common minorants of nominative upper bounds of TypeNodes
-fn getCommonMinorantsWithTypeNode(xMinorants: *AutoHashSet(*TypeNode), y: *TypeNode, allocator: Allocator) Allocator.Error!AutoHashSet(*TypeNode) {
+/// Get common minorants of nominative upper bounds of TypeNodes.
+fn getCommonMinorantsWithTypeNode(
+    xMinorants: *AutoHashSet(*TypeNode),
+    y: *TypeNode,
+    allocator: Allocator,
+) Allocator.Error!AutoHashSet(*TypeNode) {
     var yMinorants = try getMinorantOfNominativeUpperBounds(y, allocator);
     defer yMinorants.deinit();
 
     return try utils.setIntersection(*TypeNode, xMinorants, &yMinorants, allocator);
 }
 
-pub fn getMinorantOfNominativeUpperBounds(typeNode: *TypeNode, allocator: Allocator) Allocator.Error!AutoHashSet(*TypeNode) {
+/// Return minimal elements from all the nominatives ancestors of `typeNode`.
+pub fn getMinorantOfNominativeUpperBounds(
+    typeNode: *TypeNode,
+    allocator: Allocator,
+) Allocator.Error!AutoHashSet(*TypeNode) {
     var result = AutoHashSet(*TypeNode).init(allocator);
     try result.put(typeNode, {});
 

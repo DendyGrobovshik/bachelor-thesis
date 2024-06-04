@@ -9,6 +9,7 @@ const main = @import("../main.zig");
 const tree = @import("tree.zig");
 const subtyping = @import("subtyping.zig");
 const defaultVariances = @import("variance.zig").defaultVariances;
+const walker = @import("walker.zig");
 
 const AutoHashSet = utils.AutoHashSet;
 const EngineError = @import("error.zig").EngineError;
@@ -46,8 +47,10 @@ pub fn init(allocator: Allocator, by: *TypeNode) Allocator.Error!*Node {
     const universal = try TypeNode.init(allocator, TypeNode.Kind.universal, self);
     const opening = try TypeNode.init(allocator, TypeNode.Kind.opening, self);
     const closing = try TypeNode.init(allocator, TypeNode.Kind.closing, self);
-    try universal.setAsParentTo(opening);
-    try universal.setAsParentTo(closing);
+
+    // Semantically closing can not be subtype of universal,
+    // because even if it represent type (from matching previous opening) that belongs to other Node.
+    // it's subtype of other Node. Same for opening (it doesn't represent type, just part of it).
 
     self.* = .{
         .named = std.StringHashMap(*TypeNode).init(allocator),
@@ -67,6 +70,8 @@ pub fn init(allocator: Allocator, by: *TypeNode) Allocator.Error!*Node {
 pub fn mirrorWalk(self: *Node, reflection: *Node, storage: *AutoHashSet(Mirror), allocator: Allocator) EngineError!void {
     var shards = AutoHashSet(Shard).init(allocator);
     try self.universal.findMirrorShards(reflection.universal, &shards, allocator);
+    try self.closing.findMirrorShards(reflection.closing, &shards, allocator);
+    try self.opening.findMirrorShards(reflection.opening, &shards, allocator);
 
     try storage.put(Mirror{ .it = self, .reflection = reflection }, {});
 
@@ -85,48 +90,80 @@ pub fn mirrorWalk(self: *Node, reflection: *Node, storage: *AutoHashSet(Mirror),
                 const mirrorFollowings = try child.*.getMirrorFollowings(parent.*, allocator);
 
                 for (mirrorFollowings.items) |mirrorFollowing| {
-                    try mirrorWalk(mirrorFollowing.it.to, mirrorFollowing.reflection.to, storage, allocator);
+                    try mirrorWalk(
+                        mirrorFollowing.it.to,
+                        mirrorFollowing.reflection.to,
+                        storage,
+                        allocator,
+                    );
                 }
             }
         }
     }
 }
 
-pub fn search(self: *Node, next: *TypeC, allocator: Allocator) EngineError!*TypeNode {
+pub const SearchConfig = struct {
+    variance: Variance,
+    insert: bool,
+};
+
+/// Do search TypeNode exactly matching `next` type. Do not insert extra nodes.
+pub fn search(self: *Node, next: *TypeC, config: SearchConfig, allocator: Allocator) EngineError!?*TypeNode {
     var storage = AutoHashSet(*TypeNode).init(allocator); // TODO: free
-    try self.searchWithVariance(next, Variance.invariant, &storage, allocator);
-    std.debug.assert(storage.count() == 1);
+
+    try self.searchWithVariance(next, config, &storage, allocator);
+
+    std.debug.assert(storage.count() <= 1);
 
     var it = storage.keyIterator();
-    return it.next().?.*;
+    if (it.next()) |res| {
+        return res.*;
+    } else {
+        return null;
+    }
 }
 
 // TODO: distinguish allocation while inserting
 // do exact search or insert if no present
-pub fn searchWithVariance(self: *Node, next: *TypeC, variance: Variance, storage: *AutoHashSet(*TypeNode), allocator: Allocator) EngineError!void {
-    // std.debug.print("searchWithVariance: {s} {} node:{s}\n", .{ next.ty, variance, try self.labelName(allocator) });
+pub fn searchWithVariance(
+    self: *Node,
+    next: *TypeC,
+    config: SearchConfig,
+    storage: *AutoHashSet(*TypeNode),
+    allocator: Allocator,
+) EngineError!void {
+    // std.debug.print("searchWithVariance: {s} {} node:{s}\n", .{ next.ty, config.variance, try self.labelName(allocator) });
     switch (next.ty.*) {
-        .nominative => try self.searchNominative(next, variance, storage, allocator),
-        .function => try self.searchFunction(next, variance, storage, allocator),
-        .list => try self.searchList(next, variance, storage, allocator),
+        .nominative => try self.searchNominative(next, config, storage, allocator),
+        .function => try self.searchFunction(next, config, storage, allocator),
+        .list => try self.searchList(next, config, storage, allocator),
     }
 }
 
-pub fn searchNominative(self: *Node, next: *TypeC, variance: Variance, storage: *AutoHashSet(*TypeNode), allocator: Allocator) EngineError!void {
+pub fn searchNominative(
+    self: *Node,
+    next: *TypeC,
+    config: SearchConfig,
+    storage: *AutoHashSet(*TypeNode),
+    allocator: Allocator,
+) EngineError!void {
     // std.debug.print("searchNominative: {s}\n", .{next.ty});
     if (next.ty.nominative.generic) |_| {
-        try self.searchNominativeWithGeneric(next, variance, storage, allocator);
+        try self.searchNominativeWithGeneric(next, config, storage, allocator);
         return;
     }
 
     if (next.ty.nominative.isGeneric()) {
-        const nextVariance = variance.x(defaultVariances.nominativeGeneric);
+        const nextConfig = .{ .variance = config.variance.x(defaultVariances.nominativeGeneric), .insert = config.insert };
 
-        try self.searchGeneric(next, nextVariance, storage, allocator);
+        try self.searchGeneric(next, nextConfig, storage, allocator);
     } else {
-        var typeNode = self.named.get(next.ty.nominative.name) orelse try self.createAndInsertNominative(next, allocator);
-
-        try typeNode.collectAllWithVariance(variance, storage);
+        if (self.named.get(next.ty.nominative.name)) |typeNode| {
+            try typeNode.collectAllWithVariance(config.variance, storage);
+        } else if (config.insert) {
+            const typeNode = try self.createAndInsertNominative(next, allocator);
+            try typeNode.collectAllWithVariance(config.variance, storage);
+        }
     }
 }
 
@@ -139,21 +176,41 @@ fn createAndInsertNominative(self: *Node, next: *TypeC, allocator: Allocator) En
 
     try self.named.put(name, newTypeNode);
 
-    try subtyping.insertNominative(newTypeNode, self, Cache.isSubtype, allocator);
+    if (kind != TypeNode.Kind.gnominative) {
+        // because of for gnominative it makes sense to check subtyping only between
+        // for whole type (e.g. 'Array<T>') not only for 'Array', so this operation
+        // performed where gnoninative transformed into function (like 'T -> Array'
+        try subtyping.insertNominative(newTypeNode, self, Cache.isSubtype, allocator);
+    } else {
+        // TODO: but what about hierarchy between gnominatives (between universal?)
+        try self.universal.setAsParentTo(newTypeNode); // probably they should be distinguished (mb gnominatives array)
+        // for now it's required in searching
+    }
 
     return newTypeNode;
 }
 
-pub fn searchGeneric(self: *Node, next: *TypeC, variance: Variance, storage: *AutoHashSet(*TypeNode), allocator: Allocator) EngineError!void {
+pub fn searchGeneric(
+    self: *Node,
+    next: *TypeC,
+    config: SearchConfig,
+    storage: *AutoHashSet(*TypeNode),
+    allocator: Allocator,
+) EngineError!void {
     var parents = AutoHashSet(*TypeNode).init(allocator);
 
     // generic are only constraint defined, and it requires another inserting algorithm
     for (next.constraints.items) |constraint| {
         for (constraint.superTypes.items) |superType| {
-            try self.searchWithVariance(superType, Variance.invariant, &parents, allocator);
+            const nextConfig = .{
+                .variance = Variance.invariant, // TODO: why?
+                .insert = config.insert,
+            };
+            try self.searchWithVariance(superType, nextConfig, &parents, allocator);
         }
     }
 
+    // TODO: how to handle consfig.insert=false here???
     const result = try subtyping.solveConstraintsDefinedPosition(self, &parents, allocator);
 
     if (next.ty.nominative.typeNode) |backlink| {
@@ -165,11 +222,17 @@ pub fn searchGeneric(self: *Node, next: *TypeC, variance: Variance, storage: *Au
         next.ty.nominative.typeNode = result;
     }
 
-    try result.collectAllWithVariance(variance, storage);
+    try result.collectAllWithVariance(config.variance, storage);
 }
 
 /// unpacks `Nominantive<T>` to function `T -> Nominative_`
-pub fn searchNominativeWithGeneric(self: *Node, next: *TypeC, variance: Variance, storage: *AutoHashSet(*TypeNode), allocator: Allocator) EngineError!void {
+pub fn searchNominativeWithGeneric(
+    self: *Node,
+    next: *TypeC,
+    config: SearchConfig,
+    storage: *AutoHashSet(*TypeNode),
+    allocator: Allocator,
+) EngineError!void {
     // std.debug.print("Searching nominative with generic \n", .{});
     const generic = next.ty.nominative.generic orelse unreachable;
 
@@ -196,27 +259,36 @@ pub fn searchNominativeWithGeneric(self: *Node, next: *TypeC, variance: Variance
     const typec = try TypeC.init(allocator, ty);
 
     // TODO: handle constrains `A<T> < C`
-    try self.searchHOF(typec, variance, storage, allocator);
+    try self.searchHOF(typec, config, storage, allocator);
 
     if (storage.count() == 1) { // In case of insearting Variance = invariant, so only one result should be
         var it = storage.keyIterator();
-        var middle = it.next().?.*.genericFollowing(); // first should always be exact
+        var middle = it.next().?.*.genericFollowing();
         middle.kind = Following.Kind.generic;
     }
 }
 
-pub fn searchFunction(self: *Node, next: *TypeC, variance: Variance, storage: *AutoHashSet(*TypeNode), allocator: Allocator) EngineError!void {
+pub fn searchFunction(
+    self: *Node,
+    next: *TypeC,
+    config: SearchConfig,
+    storage: *AutoHashSet(*TypeNode),
+    allocator: Allocator,
+) EngineError!void {
     // std.debug.print("Searching function {s}\n", .{next.ty});
     const from = next.ty.function.from;
     const to = next.ty.function.to;
 
-    const fInV = variance.x(defaultVariances.functionIn);
+    const fInConfig = .{
+        .variance = config.variance.x(defaultVariances.functionIn),
+        .insert = config.insert,
+    };
 
     var continuations = AutoHashSet(*TypeNode).init(allocator);
     switch (from.ty.*) {
-        .nominative => try self.searchNominative(from, fInV, &continuations, allocator),
-        .function => try self.searchHOF(from, fInV, &continuations, allocator),
-        .list => try self.searchList(from, fInV, &continuations, allocator),
+        .nominative => try self.searchNominative(from, fInConfig, &continuations, allocator),
+        .function => try self.searchHOF(from, fInConfig, &continuations, allocator),
+        .list => try self.searchList(from, fInConfig, &continuations, allocator),
     }
 
     // TODO: it's not true that it always nominative
@@ -230,16 +302,25 @@ pub fn searchFunction(self: *Node, next: *TypeC, variance: Variance, storage: *A
         else => {},
     }
 
-    const fOutV = variance.x(defaultVariances.functionOut);
+    const fOutConfig = .{
+        .variance = config.variance.x(defaultVariances.functionOut),
+        .insert = config.insert,
+    };
 
     var continuationsIt = continuations.keyIterator();
     while (continuationsIt.next()) |continuation| {
         const following = try continuation.*.getFollowing(null, followingKind, allocator); // TODO: check null in following
-        try following.to.searchWithVariance(to, fOutV, storage, allocator);
+        try following.to.searchWithVariance(to, fOutConfig, storage, allocator);
     }
 }
 
-pub fn searchList(self: *Node, next: *TypeC, variance: Variance, storage: *AutoHashSet(*TypeNode), allocator: Allocator) EngineError!void {
+pub fn searchList(
+    self: *Node,
+    next: *TypeC,
+    config: SearchConfig,
+    storage: *AutoHashSet(*TypeNode),
+    allocator: Allocator,
+) EngineError!void {
     // std.debug.print("searchList {s} {}\n", .{ next.ty, variance });
     if (!next.ty.list.ordered) {
         // Order agnostic lists like OOP function parameters should be ordered before
@@ -250,7 +331,10 @@ pub fn searchList(self: *Node, next: *TypeC, variance: Variance, storage: *AutoH
     const followingOfOpening = try self.opening.getFollowing(null, Following.Kind.fake, allocator);
     followingOfOpening.kind = Following.Kind.fake;
 
-    const listVariance = variance.x(defaultVariances.tupleVariance);
+    const listConfig = .{
+        .variance = config.variance.x(defaultVariances.tupleVariance),
+        .insert = config.insert,
+    };
 
     var currentNodes = AutoHashSet(*Node).init(allocator);
     try currentNodes.put(followingOfOpening.to, {});
@@ -261,8 +345,8 @@ pub fn searchList(self: *Node, next: *TypeC, variance: Variance, storage: *AutoH
         var currentNodesIt = currentNodes.keyIterator();
         while (currentNodesIt.next()) |currentNode| {
             switch (nextType.ty.*) {
-                .function => try currentNode.*.searchHOF(nextType, listVariance, &prevTypeNodes, allocator),
-                else => try currentNode.*.searchWithVariance(nextType, listVariance, &prevTypeNodes, allocator),
+                .function => try currentNode.*.searchHOF(nextType, listConfig, &prevTypeNodes, allocator),
+                else => try currentNode.*.searchWithVariance(nextType, listConfig, &prevTypeNodes, allocator),
             }
         }
 
@@ -294,12 +378,12 @@ pub fn searchList(self: *Node, next: *TypeC, variance: Variance, storage: *AutoH
     }
 }
 
-pub fn searchHOF(self: *Node, nextType: *TypeC, variance: Variance, storage: *AutoHashSet(*TypeNode), allocator: Allocator) EngineError!void {
+pub fn searchHOF(self: *Node, nextType: *TypeC, config: SearchConfig, storage: *AutoHashSet(*TypeNode), allocator: Allocator) EngineError!void {
     const followingOfOpening = try self.opening.getFollowing(null, Following.Kind.fake, allocator);
 
     var fends = AutoHashSet(*TypeNode).init(allocator);
     defer fends.deinit();
-    try followingOfOpening.to.searchWithVariance(nextType, variance, &fends, allocator);
+    try followingOfOpening.to.searchWithVariance(nextType, config, &fends, allocator);
 
     var fendsIt = fends.keyIterator();
     while (fendsIt.next()) |fend| {
@@ -316,4 +400,6 @@ pub fn extractAllDecls(self: *Node, storage: *AutoHashSet(*Declaration)) Allocat
     }
 
     try self.universal.extractAllDecls(storage);
+    try self.opening.extractAllDecls(storage);
+    try self.closing.extractAllDecls(storage);
 }

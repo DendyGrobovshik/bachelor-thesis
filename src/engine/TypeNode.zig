@@ -144,7 +144,12 @@ pub fn removeChild(parent: *TypeNode, child: *TypeNode) void {
     }
 }
 
-pub fn getFollowing(self: *TypeNode, backlink: ?*TypeNode, kind: Following.Kind, allocator: Allocator) Allocator.Error!*Following {
+pub fn getFollowing(
+    self: *TypeNode,
+    backlink: ?*TypeNode,
+    kind: Following.Kind,
+    allocator: Allocator,
+) Allocator.Error!*Following {
     for (self.followings.items) |following| {
         if (following.backlink == backlink and following.kind == kind) {
             return following;

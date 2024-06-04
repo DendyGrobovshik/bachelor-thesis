@@ -2,7 +2,7 @@ addSuppressed: (Throwable, Throwable) -> Unit
 also: (T, ((T)->Unit)) -> T
 arrayOf: (T) -> Array<T>
 assert: (Boolean) -> Unit
-assert: (Boolean, (()->Any)) -> Unit
+assert: (Boolean, (()->T)) -> Unit
 AutoCloseable: ((()->Unit)) -> AutoCloseable
 booleanArrayOf: (Boolean) -> BooleanArray
 byteArrayOf: (Byte) -> ByteArray
@@ -10,7 +10,7 @@ Char: (Int) -> Char
 Char: (UShort) -> Char
 charArrayOf: (Char) -> CharArray
 check: (Boolean) -> Unit
-check: (Boolean, (()->Any)) -> Unit
+check: (Boolean, (()->T)) -> Unit
 countLeadingZeroBits: (Byte) -> Int
 countLeadingZeroBits: (Short) -> Int
 countLeadingZeroBits: (UInt) -> Int
@@ -39,7 +39,7 @@ doubleArrayOf: (Double) -> DoubleArray
 emptyArray: (Unit) -> Array<T>
 enumValueOf: (String) -> T
 enumValues: (Unit) -> Array<T>
-error: (Any) -> Nothing
+error: (T) -> Nothing
 floatArrayOf: (Float) -> FloatArray
 floorDiv: (Byte, Byte) -> Int
 floorDiv: (Byte, Short) -> Int
@@ -90,11 +90,91 @@ mod: (Float, Float) -> Float
 mod: (Float, Double) -> Double
 mod: (Double, Float) -> Double
 mod: (Double, Double) -> Double
-printStackTrace: (Throwable, PrintWriter) -> Unit
-printStackTrace: (Throwable, PrintStream) -> Unit
 printStackTrace: (Throwable) -> Unit
 repeat: (Int, ((Int)->Unit)) -> Unit
 require: (Boolean) -> Unit
-require: (Boolean, (()->Any)) -> Unit
+require: (Boolean, (()->T)) -> Unit
 rotateLeft: (Byte, Int) -> Byte
 rotateLeft: (Short, Int) -> Short
+rotateLeft: (UInt, Int) -> UInt
+rotateLeft: (ULong, Int) -> ULong
+rotateLeft: (UByte, Int) -> UByte
+rotateLeft: (UShort, Int) -> UShort
+rotateLeft: (Int, Int) -> Int
+rotateLeft: (Long, Int) -> Long
+rotateRight: (Byte, Int) -> Byte
+rotateRight: (Short, Int) -> Short
+rotateRight: (UInt, Int) -> UInt
+rotateRight: (ULong, Int) -> ULong
+rotateRight: (UByte, Int) -> UByte
+rotateRight: (UShort, Int) -> UShort
+rotateRight: (Int, Int) -> Int
+rotateRight: (Long, Int) -> Long
+run: ((()->R)) -> R
+runCatching: ((()->R)) -> Result<R>
+shortArrayOf: (Short) -> ShortArray
+stackTraceToString: (Throwable) -> String
+synchronized: (T, (()->R)) -> R
+synchronized: (T, (()->R)) -> R
+takeHighestOneBit: (Byte) -> Byte
+takeHighestOneBit: (Short) -> Short
+takeHighestOneBit: (UInt) -> UInt
+takeHighestOneBit: (ULong) -> ULong
+takeHighestOneBit: (UByte) -> UByte
+takeHighestOneBit: (UShort) -> UShort
+takeHighestOneBit: (Int) -> Int
+takeHighestOneBit: (Long) -> Long
+takeLowestOneBit: (Byte) -> Byte
+takeLowestOneBit: (Short) -> Short
+takeLowestOneBit: (UInt) -> UInt
+takeLowestOneBit: (ULong) -> ULong
+takeLowestOneBit: (UByte) -> UByte
+takeLowestOneBit: (UShort) -> UShort
+takeLowestOneBit: (Int) -> Int
+takeLowestOneBit: (Long) -> Long
+toBigDecimal: (Int) -> BigDecimal
+toBigDecimal: (Int, MathContext) -> BigDecimal
+toBigDecimal: (Long) -> BigDecimal
+toBigDecimal: (Long, MathContext) -> BigDecimal
+toBigDecimal: (Float) -> BigDecimal
+toBigDecimal: (Float, MathContext) -> BigDecimal
+toBigDecimal: (Double) -> BigDecimal
+toBigDecimal: (Double, MathContext) -> BigDecimal
+toBigInteger: (Int) -> BigInteger
+toBigInteger: (Long) -> BigInteger
+toBits: (Double) -> Long
+toBits: (Float) -> Int
+TODO: (Unit) -> Nothing
+TODO: (String) -> Nothing
+toRawBits: (Double) -> Long
+toRawBits: (Float) -> Int
+toUByte: (Byte) -> UByte
+toUByte: (Short) -> UByte
+toUByte: (Int) -> UByte
+toUByte: (Long) -> UByte
+toUInt: (Byte) -> UInt
+toUInt: (Short) -> UInt
+toUInt: (Int) -> UInt
+toUInt: (Long) -> UInt
+toUInt: (Float) -> UInt
+toUInt: (Double) -> UInt
+toULong: (Byte) -> ULong
+toULong: (Short) -> ULong
+toULong: (Int) -> ULong
+toULong: (Long) -> ULong
+toULong: (Float) -> ULong
+toULong: (Double) -> ULong
+toUShort: (Byte) -> UShort
+toUShort: (Short) -> UShort
+toUShort: (Int) -> UShort
+toUShort: (Long) -> UShort
+UByteArray: (Int, ((Int)->UByte)) -> UByteArray
+ubyteArrayOf: (UByte) -> UByteArray
+UIntArray: (Int, ((Int)->UInt)) -> UIntArray
+uintArrayOf: (UInt) -> UIntArray
+ULongArray: (Int, ((Int)->ULong)) -> ULongArray
+ulongArrayOf: (ULong) -> ULongArray
+use: (T, ((T)->R)) -> R
+use: (T, ((T)->R)) -> R
+UShortArray: (Int, ((Int)->UShort)) -> UShortArray
+ushortArrayOf: (UShort) -> UShortArray
