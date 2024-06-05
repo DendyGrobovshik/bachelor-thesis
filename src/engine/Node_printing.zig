@@ -78,7 +78,7 @@ pub fn isEmpty(self: *Node) bool {
     return self.endings.items.len == 0 and
         self.named.count() == 0 and
         (self.universal.followings.items.len == 0 and
-        self.universal.childs.count() == 0 and 
+        self.universal.childs.count() == 0 and
         self.opening.followings.items.len == 0 and
         self.opening.childs.count() == 0 and
         self.closing.followings.items.len == 0 and
@@ -92,20 +92,20 @@ pub fn draw(self: *Node, file: std.fs.File, allocator: Allocator) EngineError!vo
 
     const typeNodes = try self.notEmptyTypeNodes(allocator);
 
-    try file.writeAll(try std.fmt.allocPrint(allocator, "subgraph cluster_{s}", .{try self.stringPath(allocator)}));
+    try file.writeAll(try std.fmt.allocPrint(allocator, "subgraph \"cluster_{s}\"", .{try self.stringPath(allocator)}));
     try file.writeAll("{\n");
     try file.writeAll("style=\"rounded\"\n");
     var label = try self.labelName(allocator);
     if (label.len == 0) {
         label = "ROOT";
     }
-    try file.writeAll(try std.fmt.allocPrint(allocator, "label = \"{s}\";\n", .{
+    try file.writeAll(try std.fmt.allocPrint(allocator, "label=\"{s}\";\n", .{
         try utils.fixLabel(utils.trimRightArrow(label), allocator),
     }));
 
     for (self.endings.items) |decl| {
         // NOTE: keep in mind 'decl' prefix
-        try file.writeAll(try std.fmt.allocPrint(allocator, "decl{s}[label={s},color=darkgreen,style=filled,shape=signature];\n", .{
+        try file.writeAll(try std.fmt.allocPrint(allocator, "\"decl{s}\"[label=\"{s}\",color=darkgreen,style=filled,shape=signature];\n", .{
             decl.name,
             decl.name,
         }));

@@ -54,7 +54,7 @@ pub fn stringPath(self: *TypeNode, allocator: Allocator) Allocator.Error![]const
 }
 
 pub fn draw(self: *TypeNode, file: std.fs.File, allocator: Allocator) EngineError!void {
-    try file.writeAll(try std.fmt.allocPrint(allocator, "{s}[label=\"{s}\",color={s},style=filled];\n", .{
+    try file.writeAll(try std.fmt.allocPrint(allocator, "\"{s}\"[label=\"{s}\",color={s},style=filled];\n", .{
         try self.stringPath(allocator),
         try utils.fixLabel(try self.labelName(allocator), allocator),
         self.color(),
@@ -65,7 +65,7 @@ pub fn drawConnections(self: *TypeNode, file: std.fs.File, allocator: Allocator)
     var it = self.childs.keyIterator();
     while (it.next()) |child| {
         if (child.*.notEmpty()) {
-            try file.writeAll(try std.fmt.allocPrint(allocator, "{s} -> {s}[color=red,style=filled];\n", .{
+            try file.writeAll(try std.fmt.allocPrint(allocator, "\"{s}\" -> \"{s}\"[color=red,style=filled];\n", .{
                 try self.stringPath(allocator),
                 try child.*.stringPath(allocator),
             }));
@@ -74,7 +74,7 @@ pub fn drawConnections(self: *TypeNode, file: std.fs.File, allocator: Allocator)
 
     for (self.followings.items) |following| {
         if (!following.to.isEmpty()) {
-            try file.writeAll(try std.fmt.allocPrint(allocator, "{s} -> {s}[lhead=cluster_{s},color=\"{s}\",style=filled];\n", .{
+            try file.writeAll(try std.fmt.allocPrint(allocator, "\"{s}\" -> \"{s}\"[lhead=\"cluster_{s}\",color=\"{s}\",style=filled];\n", .{
                 try self.stringPath(allocator),
                 try following.to.universal.stringPath(allocator),
                 try following.to.stringPath(allocator),
