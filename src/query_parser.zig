@@ -2,9 +2,11 @@ const std = @import("std");
 const Allocator = @import("std").mem.Allocator;
 const RndGen = std.rand.DefaultPrng;
 
-const TypeNode = @import("engine/TypeNode.zig");
 const utils = @import("utils.zig");
 const main = @import("main.zig");
+
+const TypeNode = @import("engine/TypeNode.zig");
+const RandomTree = @import("random_tree.zig").RandomTree;
 
 /// parse `str` according to query_grammar.txt
 pub fn parseQuery(allocator: Allocator, str: []const u8) Parser().Error!Query {
@@ -68,18 +70,18 @@ const Nominative = struct {
         return false;
     }
 
-    pub fn generate(allocator: Allocator) anyerror!Nominative {
+    pub fn generate(randomTree: *RandomTree) anyerror!Nominative {
         // std.debug.print("generating nominative\n", .{});
-        const name = try utils.randomName(allocator);
+        const name = try randomTree.randomName();
         var generic: ?*TypeC = null;
-        if (main.rnd.random().int(u3) < 3) {
-            const typec = try allocator.create(TypeC);
+        if (randomTree.rnd.random().int(u3) < 3) {
+            const typec = try randomTree.allocator.create(TypeC);
             // const list = try allocator.create(Type);
             // list.* = .{ .list = try utils.generateGeneric(allocator) };
-            const ty = try allocator.create(Type);
+            const ty = try randomTree.allocator.create(Type);
 
-            var gname = std.ArrayList(u8).init(allocator);
-            try gname.append(main.rnd.random().intRangeLessThan(u8, 65, 90));
+            var gname = std.ArrayList(u8).init(randomTree.allocator);
+            try gname.append(randomTree.rnd.random().intRangeLessThan(u8, 65, 90));
 
             ty.* = .{
                 .nominative = Nominative{
@@ -89,7 +91,7 @@ const Nominative = struct {
 
             typec.* = .{
                 .ty = ty,
-                .constraints = std.ArrayList(Constraint).init(allocator),
+                .constraints = std.ArrayList(Constraint).init(randomTree.allocator),
             };
             generic = typec;
         }
@@ -190,11 +192,11 @@ pub const Function = struct {
         }
     }
 
-    pub fn generate(allocator: Allocator) anyerror!Function {
+    pub fn generate(randomTree: *RandomTree, depth: u8) anyerror!Function {
         // std.debug.print("generating function\n", .{});
         return Function{
-            .from = try TypeC.generate(allocator),
-            .to = try TypeC.generate(allocator),
+            .from = try TypeC.generate(randomTree, depth - 1),
+            .to = try TypeC.generate(randomTree, depth - 1),
         };
     }
 };
@@ -219,12 +221,16 @@ pub const Type = union(Kind) {
         };
     }
 
-    pub fn generate(allocator: Allocator) anyerror!*Type {
-        const self = try allocator.create(Type);
+    pub fn generate(randomTree: *RandomTree, depth: u8) anyerror!*Type {
+        const self = try randomTree.allocator.create(Type);
 
-        switch (main.rnd.random().int(u2)) {
-            0 => self.* = .{ .function = try Function.generate(allocator) },
-            else => self.* = .{ .nominative = try Nominative.generate(allocator) },
+        if (depth != 0) {
+            switch (randomTree.rnd.random().int(u3)) {
+                0 => self.* = .{ .nominative = try Nominative.generate(randomTree) },
+                else => self.* = .{ .function = try Function.generate(randomTree, depth) },
+            }
+        } else {
+            self.* = .{ .nominative = try Nominative.generate(randomTree) };
         }
 
         return self;
@@ -302,9 +308,12 @@ pub const TypeC = struct {
         return result;
     }
 
-    pub fn generate(allocator: Allocator) anyerror!*TypeC {
+    pub fn generate(randomTree: *RandomTree, depth: u8) anyerror!*TypeC {
         // std.debug.print("generating typec\n", .{});
-        return TypeC.init(allocator, try Type.generate(allocator));
+        return TypeC.init(
+            randomTree.allocator,
+            try Type.generate(randomTree, depth),
+        );
     }
 };
 

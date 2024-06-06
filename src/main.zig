@@ -5,23 +5,22 @@ const RndGen = std.rand.DefaultPrng;
 
 const utils = @import("utils.zig");
 const queryParser = @import("query_parser.zig");
+const randomTree = @import("random_tree.zig").randomTree;
 
 const Client = @import("driver/client.zig").Client;
 const KotlinClient = @import("driver/kotlin_client.zig").KotlinClient;
 const Tree = @import("engine/tree.zig").Tree;
 const Variance = @import("engine/variance.zig").Variance;
-
-// TODO: it's currently hack, should be removed
-pub var rnd: RndGen = undefined;
+const Declaration = @import("engine/entities.zig").Declaration;
 
 // compile and run: `zig build run`
 pub fn main() !void {
-    rnd = RndGen.init(0);
-
     // try demoParsing();
     // try demoTree();
     try demoServer();
     // try demoSubtyping();
+
+    // try randomTree(100, 2);
 }
 
 fn demoParsing() !void {

@@ -126,13 +126,16 @@ pub const Client = struct {
             switch (serverMessage) {
                 .subtype => {
                     const answer = Answer{
-                        .is = utils.defaultSubtype(serverMessage.subtype.parent, serverMessage.subtype.child),
+                        .is = utils.defaultSubtype(
+                            serverMessage.subtype.parent,
+                            serverMessage.subtype.child,
+                        ),
                     };
                     const message = Message{ .answer = answer };
                     _ = try self.write(Message, message);
                 },
                 .whoAreTheParentsOf => {
-                    const parents = utils.getParentsOfType(serverMessage.whoAreTheParentsOf);
+                    const parents = try utils.getParentsOfType(serverMessage.whoAreTheParentsOf);
 
                     _ = try self.write(Message, Message{ .theParentsAre = parents });
                 },

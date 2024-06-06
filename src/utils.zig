@@ -7,15 +7,6 @@ const queryParser = @import("query_parser.zig");
 const TypeC = queryParser.TypeC;
 const List = queryParser.List;
 
-pub fn randomName(allocator: Allocator) anyerror![]const u8 {
-    var name = std.ArrayList(u8).init(allocator);
-
-    for (0..main.rnd.random().intRangeLessThan(u3, 1, 5)) |_| {
-        try name.append(main.rnd.random().intRangeLessThan(u8, 65, 90));
-    }
-
-    return name.items;
-}
 
 pub fn uncurry(typec: *TypeC, allocator: Allocator) TypeC {
     var current = typec;

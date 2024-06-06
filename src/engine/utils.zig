@@ -387,31 +387,34 @@ pub fn defaultSubtype(parent: []const u8, child: []const u8) bool {
     return false;
 }
 
-const Map = struct { []const u8, []const []const u8 };
-
-const stringParents = [_][]const u8{"Collection<U8>"};
+const stringParents = [_][]const u8{ "Collection<U8>", "Printable" };
 const subOfThreeParents = [_][]const u8{ "IntEven", "String", "Printable" };
 const intParents = [_][]const u8{ "Int", "Printable" };
 const collectionParents = [_][]const u8{"Printable"};
 const AnBnCnParents = [_][]const u8{ "An", "Bn", "Cn" };
 const AnDnParents = [_][]const u8{ "An", "Dn" };
 const YnParents = [_][]const u8{"An"};
-const parentsOf = [_]Map{
-    .{ "String", &stringParents },
-    .{ "SubOfThree", &subOfThreeParents },
-    .{ "IntEven", &intParents },
-    .{ "Collection", &collectionParents },
-    .{ "AnBnCn", &AnBnCnParents },
-    .{ "AnDn", &AnDnParents },
-    .{ "Yn", &YnParents },
-};
+
+pub var parentsOf: ?std.StringHashMap([]const []const u8) = null;
 
 // For building demo tree
-pub fn getParentsOfType(ty: []const u8) []const []const u8 {
-    for (parentsOf) |map| {
-        if (std.mem.eql(u8, ty, map[0])) {
-            return map[1];
-        }
+pub fn getParentsOfType(ty: []const u8) Allocator.Error![]const []const u8 {
+    if (parentsOf == null) {
+        var parentsOf_ = std.StringHashMap([]const []const u8).init(std.heap.page_allocator);
+
+        try parentsOf_.put("String", &stringParents);
+        try parentsOf_.put("SubOfThree", &subOfThreeParents);
+        try parentsOf_.put("IntEven", &intParents);
+        try parentsOf_.put("Collection", &collectionParents);
+        try parentsOf_.put("AnBnCn", &AnBnCnParents);
+        try parentsOf_.put("AnDn", &AnDnParents);
+        try parentsOf_.put("Yn", &YnParents);
+
+        parentsOf = parentsOf_;
+    }
+
+    if (parentsOf.?.get(ty)) |parents| {
+        return parents;
     }
 
     return &[_][]const u8{}; // TODO: ensure its safe

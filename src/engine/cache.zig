@@ -132,7 +132,7 @@ pub const Cache = struct {
         if (tree.current.server) |oracle| {
             rawTypes = try oracle.getParentsOf(tyStr.str);
         } else {
-            rawTypes = utils.getParentsOfType(tyStr.str);
+            rawTypes = try utils.getParentsOfType(tyStr.str);
         }
 
         var result = AutoHashSet(*TypeNode).init(cache.allocator);

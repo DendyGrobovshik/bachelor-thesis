@@ -7,6 +7,7 @@ const SegmentedList = @import("std").SegmentedList;
 const utils = @import("utils.zig");
 const main = @import("../main.zig");
 const tree = @import("tree.zig");
+const constants = @import("constants.zig");
 
 const AutoHashSet = utils.AutoHashSet;
 const EngineError = @import("error.zig").EngineError;
@@ -266,4 +267,12 @@ pub fn isChildOf(self: *TypeNode, parent: *TypeNode) bool {
     }
 
     return false;
+}
+
+pub fn depth(self: *TypeNode) u32 {
+    if (self.of.by == &constants.PREROOT) {
+        return 0;
+    }
+
+    return 1 + depth(self.of.by);
 }

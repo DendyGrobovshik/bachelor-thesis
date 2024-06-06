@@ -119,6 +119,8 @@ pub const Tree = struct {
 
     // uses dot to visualize builded tree
     pub fn doDraw(node: *Node, path: []const u8, allocator_: Allocator) EngineError!void {
+        // png or svg
+        const FORMAT = "png";
         var arena = std.heap.ArenaAllocator.init(allocator_);
         const allocator = arena.allocator();
         defer arena.deinit();
@@ -137,12 +139,12 @@ pub const Tree = struct {
 
         try file.writeAll("}\n");
 
-        const pngPath = try std.fmt.allocPrint(allocator, "{s}.png", .{path});
+        const pngPath = try std.fmt.allocPrint(allocator, "{s}.{s}", .{ path, FORMAT });
 
         const runResult = try std.ChildProcess.run(.{
             .allocator = allocator,
             .argv = &.{
-                "dot", "-T", "png", path, "-o", pngPath,
+                "dot", "-T", FORMAT, path, "-o", pngPath,
             },
         });
 
